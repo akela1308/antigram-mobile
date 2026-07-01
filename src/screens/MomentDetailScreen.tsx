@@ -13,6 +13,7 @@ import {
 } from '../../lib/db'
 import type { Moment, MomentWithProfile, Profile, CommentWithProfile, ReactionType } from '../../lib/database.types'
 import { C } from '../theme'
+import Avatar from '../components/Avatar'
 
 const W = Dimensions.get('window').width
 
@@ -171,7 +172,6 @@ export default function MomentDetailScreen() {
 
   const totalReactions = Object.values(reactions).reduce((a, b) => a + b, 0)
   const authorName = authorProfile?.display_name || authorProfile?.username || 'antigram'
-  const authorLetter = authorName[0].toUpperCase()
 
   return (
     <KeyboardAvoidingView
@@ -216,13 +216,7 @@ export default function MomentDetailScreen() {
           }}
           activeOpacity={0.75}
         >
-          {authorProfile?.avatar_url ? (
-            <Image source={{ uri: authorProfile.avatar_url }} style={styles.authorAvatar} />
-          ) : (
-            <View style={[styles.authorAvatar, styles.authorAvatarPh]}>
-              <Text style={styles.authorAvatarLetter}>{authorLetter}</Text>
-            </View>
-          )}
+          <Avatar uri={authorProfile?.avatar_url} name={authorName} size={36} borderColor={C.BORDER} />
           <View style={styles.authorInfo}>
             <Text style={styles.authorName}>{authorName}</Text>
             <Text style={styles.authorTime}>{timeAgo(moment.created_at)}</Text>
@@ -336,13 +330,7 @@ export default function MomentDetailScreen() {
                   onLongPress={() => isMyComment && handleDeleteComment(c.id, c.user_id)}
                   activeOpacity={isMyComment ? 0.7 : 1}
                 >
-                  {c.profiles?.avatar_url ? (
-                    <Image source={{ uri: c.profiles.avatar_url }} style={styles.commentAvatar} />
-                  ) : (
-                    <View style={[styles.commentAvatar, styles.commentAvatarPh]}>
-                      <Text style={styles.commentAvatarLetter}>{name[0].toUpperCase()}</Text>
-                    </View>
-                  )}
+                  <Avatar uri={c.profiles?.avatar_url} name={name} size={32} borderColor={C.BORDER} />
                   <View style={styles.commentBody}>
                     <Text style={styles.commentName}>{name}</Text>
                     <Text style={styles.commentText}>{c.text}</Text>

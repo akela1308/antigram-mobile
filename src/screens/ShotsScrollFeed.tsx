@@ -15,13 +15,14 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   View, FlatList, StyleSheet, Text, ActivityIndicator,
-  TouchableOpacity, Image, Dimensions,
+  TouchableOpacity, Dimensions,
 } from 'react-native'
 import { useNavigation, useRoute } from '@react-navigation/native'
 import { supabase } from '../../lib/supabase'
 import { addReaction, getProfile, getUserMoments, getFeedReactions } from '../../lib/db'
 import type { Moment, MomentWithProfile, Profile, ReactionType } from '../../lib/database.types'
 import MomentCard from '../components/MomentCard'
+import Avatar from '../components/Avatar'
 import { C } from '../theme'
 
 const W = Dimensions.get('window').width
@@ -143,7 +144,6 @@ export default function ShotsScrollFeed() {
   // useEffect больше не нужен
 
   const displayName = profile?.display_name || profile?.username || ''
-  const avatarLetter = displayName ? displayName[0].toUpperCase() : '?'
 
   if (loading) {
     return (
@@ -169,13 +169,7 @@ export default function ShotsScrollFeed() {
 
         {/* Аватар пользователя */}
         <View style={styles.headerRight}>
-          {profile?.avatar_url ? (
-            <Image source={{ uri: profile.avatar_url }} style={styles.headerAvatar} />
-          ) : (
-            <View style={styles.headerAvatarFallback}>
-              <Text style={styles.headerAvatarLetter}>{avatarLetter}</Text>
-            </View>
-          )}
+          <Avatar uri={profile?.avatar_url} name={displayName} size={32} borderColor={C.BORDER} />
         </View>
       </View>
 

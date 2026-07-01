@@ -31,6 +31,7 @@ import { addReaction, getFeedReactions, getProfile, getRandomMoments, getMoments
 import type { MomentWithProfile, Profile, ReactionType } from '../../lib/database.types'
 import { C } from '../theme'
 import { getTopReaction } from '../lib/reactions'
+import Avatar from '../components/Avatar'
 
 const W = Dimensions.get('window').width
 const GRID_PAD  = 10
@@ -159,10 +160,8 @@ export default function CollectionScreen() {
   const visible = filterBySearch(allMoments, searchQuery)
   const activeLabel = categories.find(c => c.id === activeCategory)?.label ?? 'For you'
 
-  const myAvatarLetter = (myProfile?.display_name || myProfile?.username || 'A')[0].toUpperCase()
-
   function handlePhotoTap(moment: MomentWithProfile) {
-    navigation.navigate('CollectionShotsScrollFeed', {
+    navigation.navigate('ShotsScrollFeed', {
       userId: moment.user_id,
       title: moment.profiles?.display_name || moment.profiles?.username || 'Кадры',
       startMomentId: moment.id,
@@ -174,7 +173,7 @@ export default function CollectionScreen() {
     if (moment.user_id === currentUserId) {
       navigation.navigate('Profile')
     } else {
-      navigation.navigate('CollectionOtherProfile', { userId: moment.user_id })
+      navigation.navigate('OtherProfile', { userId: moment.user_id })
     }
   }
 
@@ -237,13 +236,13 @@ export default function CollectionScreen() {
         </View>
 
         <TouchableOpacity onPress={handleMyAvatarTap} style={styles.myAvatarWrap}>
-          {myProfile?.avatar_url ? (
-            <Image source={{ uri: myProfile.avatar_url }} style={styles.myAvatar} />
-          ) : (
-            <View style={styles.myAvatarFallback}>
-              <Text style={styles.myAvatarLetter}>{myAvatarLetter}</Text>
-            </View>
-          )}
+          <Avatar
+            uri={myProfile?.avatar_url}
+            name={myProfile?.display_name || myProfile?.username}
+            size={34}
+            borderWidth={1.5}
+            borderColor={C.AMBER}
+          />
         </TouchableOpacity>
       </View>
 
@@ -327,7 +326,6 @@ interface TileProps {
 function PhotoTile({ moment, index, reactionCounts, userReaction, onPhotoTap, onAvatarTap, onReact }: TileProps) {
   const profile = moment.profiles
   const name = profile?.display_name || profile?.username || 'A'
-  const letter = name[0].toUpperCase()
   const topReaction = getTopReaction(reactionCounts, moment)
   const isReacted = topReaction ? userReaction === topReaction.type : false
 
@@ -370,13 +368,7 @@ function PhotoTile({ moment, index, reactionCounts, userReaction, onPhotoTap, on
         onPress={(e) => { e.stopPropagation(); onAvatarTap(moment) }}
         hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
       >
-        {profile?.avatar_url ? (
-          <Image source={{ uri: profile.avatar_url }} style={styles.tileAvatar} />
-        ) : (
-          <View style={styles.tileAvatarFallback}>
-            <Text style={styles.tileAvatarLetter}>{letter}</Text>
-          </View>
-        )}
+        <Avatar uri={profile?.avatar_url} name={name} size={30} borderWidth={1.5} borderColor={C.WHITE} />
       </TouchableOpacity>
     </TouchableOpacity>
   )
