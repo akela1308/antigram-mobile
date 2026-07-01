@@ -1,5 +1,12 @@
+import * as Sentry from '@sentry/react-native'
 import { useEffect, useState } from 'react'
 import { Alert } from 'react-native'
+
+Sentry.init({
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN || '',
+  enabled: !!process.env.EXPO_PUBLIC_SENTRY_DSN,
+  tracesSampleRate: 0.1,
+})
 import { NavigationContainer } from '@react-navigation/native'
 import { StatusBar } from 'expo-status-bar'
 import { Session } from '@supabase/supabase-js'
@@ -53,27 +60,27 @@ export default function App() {
   async function handleSessionUser(session: Session) {
     const userId = session.user.id
 
-    // Проверяем — не заблокирован ли пользователь
-    const blocked = await isUserBlocked(userId)
-    if (blocked) {
-      await supabase.auth.signOut()
-      Alert.alert(
-        'Аккаунт заблокирован',
-        'Твой аккаунт заблокирован. Если ты считаешь, что это ошибка — напиши нам.',
-      )
-      return
+    try {
+      const blocked = await isUserBlocked(userId)
+      if (blocked) {
+        await supabase.auth.signOut()
+        Alert.alert(
+          'Аккаунт заблокирован',
+          'Твой аккаунт заблокирован. Если ты считаешь, что это ошибка — напиши нам.',
+        )
+        return
+      }
+
+      const admin = await isUserAdmin(userId)
+      setIsAdmin(admin)
+
+      identify(userId, { is_admin: admin })
+      track(Events.APP_OPENED)
+
+      registerPushToken(userId)
+    } catch (error) {
+      Sentry.captureException(error)
     }
-
-    // Проверяем admin-статус
-    const admin = await isUserAdmin(userId)
-    setIsAdmin(admin)
-
-    // Идентифицируем пользователя в аналитике
-    identify(userId, { is_admin: admin })
-    track(Events.APP_OPENED)
-
-    // Регистрируем push-токен устройства
-    registerPushToken(userId)
   }
 
   if (loading || !fontsLoaded) return null

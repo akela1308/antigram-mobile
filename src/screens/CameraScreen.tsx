@@ -9,8 +9,9 @@ import { CameraView, CameraType, FlashMode, useCameraPermissions } from 'expo-ca
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native'
 import { useLang } from '../context/LanguageContext'
 import { useAppContext } from '../context/AppContext'
-import { uploadMomentPhoto, createMoment } from '../../lib/db'
+import { addReaction, uploadMomentPhoto, createMoment } from '../../lib/db'
 import { supabase } from '../../lib/supabase'
+import type { ReactionType } from '../../lib/database.types'
 import { FILM_PRESETS, FilmPreset } from '../constants/filmPresets'
 import FilmStrip from '../components/FilmStrip'
 import { C } from '../theme'
@@ -27,14 +28,12 @@ const FLARE_LABELS: Record<FlareType, string> = {
 }
 const FLARE_OPTIONS: FlareType[] = ['none', 'leak_warm', 'leak_cool', 'edge_burn', 'streak']
 
-type MoodKey = 'calm' | 'nostalgic' | 'joyful' | 'melancholic' | 'warm'
-
-const MOODS: { key: MoodKey; emoji: string }[] = [
-  { key: 'calm',        emoji: '🌿' },
-  { key: 'nostalgic',   emoji: '🌅' },
-  { key: 'joyful',      emoji: '✨' },
-  { key: 'melancholic', emoji: '🌧' },
-  { key: 'warm',        emoji: '🔥' },
+const MOODS: { key: ReactionType; emoji: string; labelKey: 'moodCalm' | 'moodNostalgic' | 'moodWarm' | 'moodWow' | 'moodRelatable' }[] = [
+  { key: 'calm',      emoji: '🌿', labelKey: 'moodCalm' },
+  { key: 'nostalgic', emoji: '🌅', labelKey: 'moodNostalgic' },
+  { key: 'wow',       emoji: '✨', labelKey: 'moodWow' },
+  { key: 'relatable', emoji: '🤍', labelKey: 'moodRelatable' },
+  { key: 'warm',      emoji: '🔥', labelKey: 'moodWarm' },
 ]
 
 const { width: SW } = Dimensions.get('window')
@@ -64,7 +63,7 @@ export default function CameraScreen() {
   const [processing, setProcessing] = useState(false)
   const [photoUri, setPhotoUri]     = useState<string | null>(null)
   const [caption, setCaption]           = useState('')
-  const [mood, setMood]                 = useState<MoodKey | null>(null)
+  const [mood, setMood]                 = useState<ReactionType | null>(null)
   const [publishing, setPublishing]     = useState(false)
   const [published, setPublished]       = useState(false)
 
@@ -135,6 +134,11 @@ export default function CameraScreen() {
   // ── ПУБЛИКАЦИЯ ────────────────────────────────────────────────────────────
   async function handlePublish() {
     if (!photoUri) return
+    const selectedReaction: ReactionType | null = customMoodEmoji && customMoodLabel ? 'custom' : mood
+    if (!selectedReaction) {
+      Alert.alert(t.chooseMood, 'Выбери атмосферу кадра перед публикацией')
+      return
+    }
     setPublishing(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setPublishing(false); return }
@@ -144,7 +148,7 @@ export default function CameraScreen() {
       setPublishing(false)
       return
     }
-    const { error } = await createMoment({
+    const { data: createdMoment, error } = await createMoment({
       userId: user.id,
       photoUrl,
       caption: caption.trim() || undefined,
@@ -156,6 +160,9 @@ export default function CameraScreen() {
     if (error) {
       Alert.alert(t.error, t.publishError)
     } else {
+      if (createdMoment?.id) {
+        await addReaction(createdMoment.id, user.id, selectedReaction)
+      }
       setPublished(true)
       setTimeout(() => {
         setPublished(false)
@@ -227,14 +234,17 @@ export default function CameraScreen() {
 
           <Text style={styles.sectionLabel}>{t.chooseMood}</Text>
           <View style={styles.moodRow}>
-            {MOODS.map(({ key, emoji }) => {
-              const labelKey = ('mood' + key.charAt(0).toUpperCase() + key.slice(1)) as keyof typeof t
+            {MOODS.map(({ key, emoji, labelKey }) => {
               const active = mood === key
               return (
                 <TouchableOpacity
                   key={key}
                   style={[styles.moodChip, active && styles.moodChipActive]}
-                  onPress={() => setMood(active ? null : key)}
+                  onPress={() => {
+                    setCustomMoodEmoji('')
+                    setCustomMoodLabel('')
+                    setMood(active ? null : key)
+                  }}
                 >
                   <Text style={styles.moodEmoji}>{emoji}</Text>
                   <Text style={[styles.moodText, active && styles.moodTextActive]}>
@@ -318,6 +328,7 @@ export default function CameraScreen() {
                   ]}
                   disabled={!draftEmoji || !draftLabel.trim()}
                   onPress={() => {
+                    setMood(null)
                     setCustomMoodEmoji(draftEmoji)
                     setCustomMoodLabel(draftLabel.trim())
                     setShowCustomModal(false)

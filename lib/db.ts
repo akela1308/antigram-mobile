@@ -533,13 +533,13 @@ export async function updateAlbumTitle(albumId: string, title: string): Promise<
 }
 
 // Batch-загрузка реакций для ленты (один запрос на все моменты)
-export async function getFeedReactions(momentIds: string[]): Promise<{ moment_id: string; type: ReactionType }[]> {
+export async function getFeedReactions(momentIds: string[]): Promise<{ moment_id: string; user_id: string; type: ReactionType }[]> {
   if (momentIds.length === 0) return []
   const { data } = await supabase
     .from('reactions')
-    .select('moment_id, type')
+    .select('moment_id, user_id, type')
     .in('moment_id', momentIds)
-  return (data as { moment_id: string; type: ReactionType }[]) ?? []
+  return (data as { moment_id: string; user_id: string; type: ReactionType }[]) ?? []
 }
 
 // ─────────────────────────────────────────────

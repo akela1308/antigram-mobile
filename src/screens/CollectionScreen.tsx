@@ -27,9 +27,10 @@ import {
 import CategoryFilmStrip, { CategoryItem } from '../components/CategoryFilmStrip'
 import { useFocusEffect, useNavigation } from '@react-navigation/native'
 import { supabase } from '../../lib/supabase'
-import { getProfile, getRandomMoments, getMomentsByEmotion } from '../../lib/db'
+import { addReaction, getFeedReactions, getProfile, getRandomMoments, getMomentsByEmotion } from '../../lib/db'
 import type { MomentWithProfile, Profile, ReactionType } from '../../lib/database.types'
 import { C } from '../theme'
+import { getTopReaction } from '../lib/reactions'
 
 const W = Dimensions.get('window').width
 const GRID_PAD  = 10
@@ -67,6 +68,8 @@ export default function CollectionScreen() {
   const navigation = useNavigation<any>()
 
   const [allMoments, setAllMoments]       = useState<MomentWithProfile[]>([])
+  const [reactionMap, setReactionMap]     = useState<Record<string, Partial<Record<ReactionType, number>>>>({})
+  const [userReactionMap, setUserReactionMap] = useState<Record<string, ReactionType | null>>({})
   const [myProfile,  setMyProfile]        = useState<Profile | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [activeCategory, setActiveCategory] = useState('for_you')
@@ -123,7 +126,27 @@ export default function CollectionScreen() {
     }
 
     setAllMoments(moments)
+    await loadReactions(moments, user?.id)
     setLoading(false)
+  }
+
+  async function loadReactions(moments: MomentWithProfile[], userId?: string) {
+    if (moments.length === 0) {
+      setReactionMap({})
+      setUserReactionMap({})
+      return
+    }
+
+    const raw = await getFeedReactions(moments.map(m => m.id))
+    const map: Record<string, Partial<Record<ReactionType, number>>> = {}
+    const userMap: Record<string, ReactionType | null> = {}
+    for (const r of raw) {
+      if (!map[r.moment_id]) map[r.moment_id] = {}
+      map[r.moment_id][r.type] = (map[r.moment_id][r.type] ?? 0) + 1
+      if (userId && r.user_id === userId) userMap[r.moment_id] = r.type
+    }
+    setReactionMap(map)
+    setUserReactionMap(userMap)
   }
 
   function handleCategorySelect(id: string) {
@@ -152,6 +175,32 @@ export default function CollectionScreen() {
       navigation.navigate('Profile')
     } else {
       navigation.navigate('CollectionOtherProfile', { userId: moment.user_id })
+    }
+  }
+
+  async function handleTileReaction(moment: MomentWithProfile, type: ReactionType) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const previous = userReactionMap[moment.id] ?? null
+    if (previous === type) return
+
+    setUserReactionMap(prev => ({ ...prev, [moment.id]: type }))
+    setReactionMap(prev => {
+      const current = { ...(prev[moment.id] ?? {}) }
+      if (previous) current[previous] = Math.max(0, (current[previous] ?? 0) - 1)
+      current[type] = (current[type] ?? 0) + 1
+      return { ...prev, [moment.id]: current }
+    })
+
+    const { error } = await addReaction(moment.id, user.id, type)
+    if (error) {
+      setUserReactionMap(prev => ({ ...prev, [moment.id]: previous }))
+      setReactionMap(prev => {
+        const current = { ...(prev[moment.id] ?? {}) }
+        current[type] = Math.max(0, (current[type] ?? 0) - 1)
+        if (previous) current[previous] = (current[previous] ?? 0) + 1
+        return { ...prev, [moment.id]: current }
+      })
     }
   }
 
@@ -249,8 +298,11 @@ export default function CollectionScreen() {
             <PhotoTile
               moment={item}
               index={index}
+              reactionCounts={reactionMap[item.id] ?? {}}
+              userReaction={userReactionMap[item.id] ?? null}
               onPhotoTap={handlePhotoTap}
               onAvatarTap={handleAvatarTap}
+              onReact={handleTileReaction}
             />
           )}
           ListFooterComponent={<View style={{ height: 32 }} />}
@@ -265,14 +317,19 @@ export default function CollectionScreen() {
 interface TileProps {
   moment: MomentWithProfile
   index: number
+  reactionCounts: Partial<Record<ReactionType, number>>
+  userReaction: ReactionType | null
   onPhotoTap: (m: MomentWithProfile) => void
   onAvatarTap: (m: MomentWithProfile) => void
+  onReact: (m: MomentWithProfile, type: ReactionType) => void
 }
 
-function PhotoTile({ moment, index, onPhotoTap, onAvatarTap }: TileProps) {
+function PhotoTile({ moment, index, reactionCounts, userReaction, onPhotoTap, onAvatarTap, onReact }: TileProps) {
   const profile = moment.profiles
   const name = profile?.display_name || profile?.username || 'A'
   const letter = name[0].toUpperCase()
+  const topReaction = getTopReaction(reactionCounts, moment)
+  const isReacted = topReaction ? userReaction === topReaction.type : false
 
   const isLeft = index % 2 === 0
 
@@ -287,6 +344,25 @@ function PhotoTile({ moment, index, onPhotoTap, onAvatarTap }: TileProps) {
         style={styles.tileImg}
         resizeMode="cover"
       />
+
+      {topReaction && (
+        <TouchableOpacity
+          style={[styles.tileReaction, isReacted && styles.tileReactionActive]}
+          onPress={(e) => {
+            e.stopPropagation()
+            onReact(moment, topReaction.type)
+          }}
+          activeOpacity={0.82}
+        >
+          <Text style={styles.tileReactionEmoji}>{topReaction.emoji}</Text>
+          <Text style={[styles.tileReactionLabel, isReacted && styles.tileReactionTextActive]} numberOfLines={1}>
+            {topReaction.label}
+          </Text>
+          <Text style={[styles.tileReactionCount, isReacted && styles.tileReactionTextActive]}>
+            {topReaction.count}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {/* Аватар автора — верхний левый угол */}
       <TouchableOpacity
@@ -408,6 +484,40 @@ const styles = StyleSheet.create({
   tileImg: {
     width: '100%',
     height: '100%',
+  },
+  tileReaction: {
+    position: 'absolute',
+    left: 8,
+    bottom: 8,
+    maxWidth: TILE_W - 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 15,
+    backgroundColor: 'rgba(20,14,10,0.74)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  tileReactionActive: {
+    backgroundColor: 'rgba(201,132,62,0.30)',
+    borderColor: C.AMBER,
+  },
+  tileReactionEmoji: { fontSize: 12 },
+  tileReactionLabel: {
+    color: C.WHITE,
+    fontSize: 10,
+    fontWeight: '700',
+    maxWidth: 82,
+  },
+  tileReactionCount: {
+    color: C.WHITE,
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  tileReactionTextActive: {
+    color: C.AMBER_LIGHT,
   },
 
   // Аватар автора поверх фото

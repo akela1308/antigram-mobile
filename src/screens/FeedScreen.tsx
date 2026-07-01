@@ -4,7 +4,7 @@ import {
   RefreshControl, ActivityIndicator, TouchableOpacity, Platform,
 } from 'react-native'
 import { useFocusEffect, useNavigation } from '@react-navigation/native'
-import { getFeed, getMomentsByEmotion, getFeedReactions, getProfile, getSavedMomentIds, saveMoment, unsaveMoment, reportMoment, adminDeleteMoment, adminBanUser, adminBlockUser } from '../../lib/db'
+import { getFeed, getMomentsByEmotion, getFeedReactions, getProfile, getSavedMomentIds, saveMoment, unsaveMoment, reportMoment, adminDeleteMoment, adminBanUser, adminBlockUser, addReaction } from '../../lib/db'
 import { track, Events } from '../../lib/analytics'
 import { MomentWithProfile, Profile, ReactionType } from '../../lib/database.types'
 import { supabase } from '../../lib/supabase'
@@ -30,6 +30,7 @@ export default function FeedScreen() {
   const navigation = useNavigation<any>()
   const [moments, setMoments]       = useState<MomentWithProfile[]>([])
   const [reactionMap, setReactionMap] = useState<Record<string, Partial<Record<ReactionType, number>>>>({})
+  const [userReactionMap, setUserReactionMap] = useState<Record<string, ReactionType | null>>({})
   const [loading, setLoading]       = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | undefined>()
@@ -97,14 +98,18 @@ export default function FeedScreen() {
         user ? getSavedMomentIds(user.id) : Promise.resolve([] as string[]),
       ])
       const map: Record<string, Partial<Record<ReactionType, number>>> = {}
+      const userMap: Record<string, ReactionType | null> = {}
       for (const r of rawReactions) {
         if (!map[r.moment_id]) map[r.moment_id] = {}
         map[r.moment_id][r.type] = (map[r.moment_id][r.type] ?? 0) + 1
+        if (user && r.user_id === user.id) userMap[r.moment_id] = r.type
       }
       setReactionMap(map)
+      setUserReactionMap(userMap)
       setSavedIds(new Set(savedList))
     } else {
       setReactionMap({})
+      setUserReactionMap({})
       setSavedIds(new Set())
     }
 
@@ -155,6 +160,34 @@ export default function FeedScreen() {
     if (!currentUserId) return
     await reportMoment(currentUserId, momentId, 'reported')
     Alert.alert('Жалоба отправлена', 'Мы рассмотрим её в ближайшее время.')
+  }
+
+  async function handleReact(momentId: string, type: ReactionType) {
+    if (isGuest) { exitGuestMode(); return }
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const previous = userReactionMap[momentId] ?? null
+    if (previous === type) return
+
+    setUserReactionMap(prev => ({ ...prev, [momentId]: type }))
+    setReactionMap(prev => {
+      const current = { ...(prev[momentId] ?? {}) }
+      if (previous) current[previous] = Math.max(0, (current[previous] ?? 0) - 1)
+      current[type] = (current[type] ?? 0) + 1
+      return { ...prev, [momentId]: current }
+    })
+
+    const { error } = await addReaction(momentId, user.id, type)
+    if (error) {
+      setUserReactionMap(prev => ({ ...prev, [momentId]: previous }))
+      setReactionMap(prev => {
+        const current = { ...(prev[momentId] ?? {}) }
+        current[type] = Math.max(0, (current[type] ?? 0) - 1)
+        if (previous) current[previous] = (current[previous] ?? 0) + 1
+        return { ...prev, [momentId]: current }
+      })
+      Alert.alert('Не удалось поставить реакцию', 'Попробуй ещё раз')
+    }
   }
 
   async function handleAdminDelete(momentId: string) {
@@ -258,8 +291,10 @@ export default function FeedScreen() {
               currentUserId={currentUserId}
               isAdmin={isAdmin}
               reactionCounts={reactionMap[item.id] ?? {}}
+              userReaction={userReactionMap[item.id] ?? null}
               isSaved={savedIds.has(item.id)}
               onRegisterPrompt={exitGuestMode}
+              onReact={handleReact}
               onOpenDetail={() => {
                 if (isGuest) { exitGuestMode(); return }
                 navigation.navigate('MomentDetail', {
