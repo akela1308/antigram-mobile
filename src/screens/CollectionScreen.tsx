@@ -27,7 +27,7 @@ import {
 import CategoryFilmStrip, { CategoryItem } from '../components/CategoryFilmStrip'
 import { useFocusEffect, useNavigation } from '@react-navigation/native'
 import { supabase } from '../../lib/supabase'
-import { addReaction, getFeedReactions, getProfile, getRandomMoments, getMomentsByEmotion } from '../../lib/db'
+import { addReaction, getFeedReactions, getProfile, getRandomMoments, getMomentsByEmotion, getGlobalCategoryThumbnails } from '../../lib/db'
 import type { MomentWithProfile, Profile, ReactionType } from '../../lib/database.types'
 import { C } from '../theme'
 import { getTopReaction } from '../lib/reactions'
@@ -80,7 +80,6 @@ export default function CollectionScreen() {
   const [categories, setCategories]       = useState<CategoryItem[]>(BASE_CATEGORIES)
 
   const searchRef        = useRef<TextInput>(null)
-  const thumbnailsLoaded = useRef(false)
   const firstLoad        = useRef(false)
 
   useFocusEffect(
@@ -93,17 +92,11 @@ export default function CollectionScreen() {
     }, [])
   )
 
-  // Подгружаем превью для каждой эмоции один раз
   async function loadEmotionThumbnails() {
-    if (thumbnailsLoaded.current) return
-    thumbnailsLoaded.current = true
-    const emotions = ['warm', 'nostalgic', 'calm', 'wow', 'relatable'] as ReactionType[]
-    const results = await Promise.all(emotions.map(e => getMomentsByEmotion(e, 1)))
+    const thumbnails = await getGlobalCategoryThumbnails()
     setCategories(prev => prev.map(cat => {
-      const idx = emotions.indexOf(cat.id as ReactionType)
-      if (idx === -1) return cat
-      const top = results[idx][0]
-      return top ? { ...cat, photoUrl: top.photo_url } : cat
+      const url = (thumbnails as Record<string, string | null>)[cat.id] ?? null
+      return url ? { ...cat, photoUrl: url } : cat
     }))
   }
 

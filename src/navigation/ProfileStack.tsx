@@ -8,6 +8,7 @@ import MomentDetailScreen from '../screens/MomentDetailScreen'
 import ShotsScrollFeed from '../screens/ShotsScrollFeed'
 import SavedScreen from '../screens/SavedScreen'
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen'
+import FollowListScreen from '../screens/FollowListScreen'
 
 const Stack = createNativeStackNavigator()
 
@@ -23,6 +24,7 @@ export default function ProfileStack() {
       <Stack.Screen name="ShotsScrollFeed" component={ShotsScrollFeed} />
       <Stack.Screen name="SavedScreen" component={SavedScreen} />
       <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
+      <Stack.Screen name="FollowList" component={FollowListScreen} />
     </Stack.Navigator>
   )
 }

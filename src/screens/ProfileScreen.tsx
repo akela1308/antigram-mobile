@@ -260,15 +260,21 @@ export default function ProfileScreen() {
                 <Text style={styles.statLabel}>кадры</Text>
               </View>
               <View style={styles.statDivider} />
-              <View style={styles.stat}>
+              <TouchableOpacity
+                style={styles.stat}
+                onPress={() => userId && navigation.navigate('FollowList', { userId, kind: 'followers' })}
+              >
                 <Text style={styles.statNum}>{fmt(followers)}</Text>
                 <Text style={styles.statLabel}>подписчики</Text>
-              </View>
+              </TouchableOpacity>
               <View style={styles.statDivider} />
-              <View style={styles.stat}>
+              <TouchableOpacity
+                style={styles.stat}
+                onPress={() => userId && navigation.navigate('FollowList', { userId, kind: 'following' })}
+              >
                 <Text style={styles.statNum}>{fmt(following)}</Text>
                 <Text style={styles.statLabel}>подписки</Text>
-              </View>
+              </TouchableOpacity>
             </View>
 
             {/* Tabs */}

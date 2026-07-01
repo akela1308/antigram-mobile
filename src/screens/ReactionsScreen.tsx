@@ -3,11 +3,12 @@ import {
   View, Text, StyleSheet, FlatList, Image,
   ActivityIndicator, TouchableOpacity,
 } from 'react-native'
-import { useFocusEffect } from '@react-navigation/native'
+import { useFocusEffect, useNavigation } from '@react-navigation/native'
 import { supabase } from '../../lib/supabase'
 import { getMyNotifications, markNotificationsRead } from '../../lib/db'
-import type { NotificationItem } from '../../lib/database.types'
+import type { NotificationItem, Moment } from '../../lib/database.types'
 import { C } from '../theme'
+import { useAppContext } from '../context/AppContext'
 
 const REACTION_EMOJI: Record<string, string> = {
   warm: '🔥', nostalgic: '🌅', calm: '🌿', wow: '✨', relatable: '🤍',
@@ -42,8 +43,11 @@ function isRecent(iso: string): boolean {
 }
 
 export default function ReactionsScreen() {
+  const navigation = useNavigation<any>()
+  const { setUnreadCount } = useAppContext()
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [loading, setLoading]             = useState(true)
+  const [currentUserId, setCurrentUserId] = useState<string | undefined>()
 
   useFocusEffect(
     useCallback(() => { load() }, [])
@@ -53,11 +57,35 @@ export default function ReactionsScreen() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setLoading(false); return }
+    setCurrentUserId(user.id)
     const data = await getMyNotifications(user.id)
     setNotifications(data)
     setLoading(false)
-    // Отмечаем как прочитанные после показа
     markNotificationsRead(user.id)
+    setUnreadCount(0)
+  }
+
+  function handleNotificationPress(item: NotificationItem) {
+    if ((item.type === 'reaction' || item.type === 'comment') && item.moments) {
+      const m = item.moments
+      const moment: Moment = {
+        id: m.id,
+        user_id: m.user_id,
+        photo_url: m.photo_url,
+        caption: m.caption,
+        mood: m.mood,
+        custom_mood_emoji: null,
+        custom_mood_label: null,
+        is_public: m.is_public,
+        created_at: m.created_at,
+      }
+      navigation.navigate('MomentDetail', {
+        moment,
+        isOwner: m.user_id === currentUserId,
+      })
+    } else if (item.actor_id) {
+      navigation.navigate('OtherProfile', { userId: item.actor_id })
+    }
   }
 
   if (loading) {
@@ -88,7 +116,11 @@ export default function ReactionsScreen() {
           const letter    = actorName[0].toUpperCase()
 
           return (
-            <View style={[styles.row, unread && styles.rowUnread]}>
+            <TouchableOpacity
+              style={[styles.row, unread && styles.rowUnread]}
+              onPress={() => handleNotificationPress(item)}
+              activeOpacity={0.75}
+            >
               {/* Аватар актора */}
               <View style={styles.avatarWrap}>
                 {item.profiles?.avatar_url ? (
@@ -117,7 +149,7 @@ export default function ReactionsScreen() {
 
               {/* Оранжевая точка для новых */}
               {(unread || recent) && <View style={styles.dot} />}
-            </View>
+            </TouchableOpacity>
           )
         }}
         ListEmptyComponent={

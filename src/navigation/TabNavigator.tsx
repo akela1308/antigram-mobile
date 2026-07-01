@@ -3,11 +3,12 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { getFocusedRouteNameFromRoute } from '@react-navigation/native'
 import { C } from '../theme'
+import { useAppContext } from '../context/AppContext'
 
 import FeedStack        from './FeedStack'
 import CollectionStack  from './CollectionStack'
 import CameraStack      from './CameraStack'
-import ReactionsScreen  from '../screens/ReactionsScreen'
+import ReactionsStack   from './ReactionsStack'
 import ProfileStack     from './ProfileStack'
 
 const Tab = createBottomTabNavigator()
@@ -39,6 +40,7 @@ function CameraButton({ onPress }: { onPress: () => void }) {
 }
 
 export default function TabNavigator() {
+  const { unreadCount } = useAppContext()
   return (
     <Tab.Navigator
       screenOptions={{
@@ -81,11 +83,12 @@ export default function TabNavigator() {
       />
       <Tab.Screen
         name="Reactions"
-        component={ReactionsScreen}
+        component={ReactionsStack}
         options={{
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="notifications-outline" size={size} color={color} />
           ),
+          tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
         }}
       />
       <Tab.Screen

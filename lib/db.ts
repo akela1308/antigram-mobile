@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { Profile, Moment, MomentWithProfile, ReactionType, ReactionWithDetails, HighlightWithMoment, Album, AlbumWithMoments, CommentWithProfile, SavedMoment, NotificationItem } from './database.types'
+import type { Profile, Moment, MomentWithProfile, ReactionType, ReactionWithDetails, HighlightWithMoment, Album, AlbumWithMoments, CommentWithProfile, SavedMoment, NotificationItem, FollowProfile } from './database.types'
 import * as FileSystem from 'expo-file-system/legacy'
 import { decode } from 'base64-arraybuffer'
 import { track, Events } from './analytics'
@@ -204,7 +204,7 @@ export async function searchUsers(query: string): Promise<Profile[]> {
 export async function getMyNotifications(userId: string): Promise<NotificationItem[]> {
   const { data } = await supabase
     .from('notifications')
-    .select('*, profiles!actor_id(*), moments(photo_url)')
+    .select('*, profiles!actor_id(*), moments(id, user_id, photo_url, caption, mood, is_public, created_at)')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(50)
@@ -254,6 +254,100 @@ export async function getFollowingCount(userId: string): Promise<number> {
     .select('*', { count: 'exact', head: true })
     .eq('follower_id', userId)
   return count ?? 0
+}
+
+// ─────────────────────────────────────────────
+// CATEGORY THUMBNAILS
+// ─────────────────────────────────────────────
+
+export type CategoryThumbnailMap = {
+  for_you:   string | null
+  warm:      string | null
+  nostalgic: string | null
+  calm:      string | null
+  wow:       string | null
+  relatable: string | null
+}
+
+function pickRandom<T>(arr: T[]): T | null {
+  return arr.length === 0 ? null : arr[Math.floor(Math.random() * arr.length)]
+}
+
+export async function getGlobalCategoryThumbnails(): Promise<CategoryThumbnailMap> {
+  const emotions: ReactionType[] = ['warm', 'nostalgic', 'calm', 'wow', 'relatable']
+  const [forYouRes, ...emotionLists] = await Promise.all([
+    supabase.from('moments').select('photo_url').eq('is_public', true)
+      .order('created_at', { ascending: false }).limit(40),
+    ...emotions.map(e => getMomentsByEmotion(e, 5)),
+  ])
+  const forYouUrls = (forYouRes.data as { photo_url: string }[] ?? []).map(m => m.photo_url)
+  const result: CategoryThumbnailMap = {
+    for_you: pickRandom(forYouUrls),
+    warm: null, nostalgic: null, calm: null, wow: null, relatable: null,
+  }
+  emotions.forEach((e, i) => {
+    const urls = (emotionLists[i] as MomentWithProfile[]).map(m => m.photo_url)
+    ;(result as Record<string, string | null>)[e] = pickRandom(urls)
+  })
+  return result
+}
+
+export async function getFollowingCategoryThumbnails(userId: string): Promise<CategoryThumbnailMap> {
+  const { data: following } = await supabase
+    .from('follows').select('following_id').eq('follower_id', userId)
+  const followingIds = (following as { following_id: string }[] ?? []).map(f => f.following_id)
+
+  const forYouQuery = followingIds.length > 0
+    ? supabase.from('moments').select('photo_url').eq('is_public', true)
+        .in('user_id', followingIds).order('created_at', { ascending: false }).limit(20)
+    : supabase.from('moments').select('photo_url').eq('is_public', true)
+        .order('created_at', { ascending: false }).limit(20)
+
+  const emotions: ReactionType[] = ['warm', 'nostalgic', 'calm', 'wow', 'relatable']
+  const [forYouRes, ...emotionLists] = await Promise.all([
+    forYouQuery,
+    ...emotions.map(e => getMomentsByEmotion(e, 5)),
+  ])
+  const forYouUrls = (forYouRes.data as { photo_url: string }[] ?? []).map(m => m.photo_url)
+  const result: CategoryThumbnailMap = {
+    for_you: pickRandom(forYouUrls),
+    warm: null, nostalgic: null, calm: null, wow: null, relatable: null,
+  }
+  emotions.forEach((e, i) => {
+    const urls = (emotionLists[i] as MomentWithProfile[]).map(m => m.photo_url)
+    ;(result as Record<string, string | null>)[e] = pickRandom(urls)
+  })
+  return result
+}
+
+// ─────────────────────────────────────────────
+// FOLLOW LISTS
+// ─────────────────────────────────────────────
+
+export async function getFollowers(userId: string): Promise<FollowProfile[]> {
+  const { data } = await supabase
+    .from('follows').select('follower_id, created_at')
+    .eq('following_id', userId).order('created_at', { ascending: false })
+  if (!data || data.length === 0) return []
+  const rows = data as { follower_id: string; created_at: string }[]
+  const ids = rows.map(r => r.follower_id)
+  const { data: profiles } = await supabase.from('profiles').select('*').in('id', ids)
+  const map: Record<string, Profile> = {}
+  for (const p of (profiles as Profile[]) ?? []) map[p.id] = p
+  return rows.filter(r => map[r.follower_id]).map(r => ({ profile: map[r.follower_id], followed_at: r.created_at }))
+}
+
+export async function getFollowing(userId: string): Promise<FollowProfile[]> {
+  const { data } = await supabase
+    .from('follows').select('following_id, created_at')
+    .eq('follower_id', userId).order('created_at', { ascending: false })
+  if (!data || data.length === 0) return []
+  const rows = data as { following_id: string; created_at: string }[]
+  const ids = rows.map(r => r.following_id)
+  const { data: profiles } = await supabase.from('profiles').select('*').in('id', ids)
+  const map: Record<string, Profile> = {}
+  for (const p of (profiles as Profile[]) ?? []) map[p.id] = p
+  return rows.filter(r => map[r.following_id]).map(r => ({ profile: map[r.following_id], followed_at: r.created_at }))
 }
 
 export async function getRandomMoments(limit: number): Promise<MomentWithProfile[]> {

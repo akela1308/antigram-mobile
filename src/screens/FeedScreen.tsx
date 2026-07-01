@@ -4,7 +4,7 @@ import {
   RefreshControl, ActivityIndicator, TouchableOpacity, Platform,
 } from 'react-native'
 import { useFocusEffect, useNavigation } from '@react-navigation/native'
-import { getFeed, getMomentsByEmotion, getFeedReactions, getProfile, getSavedMomentIds, saveMoment, unsaveMoment, reportMoment, adminDeleteMoment, adminBanUser, adminBlockUser, addReaction } from '../../lib/db'
+import { getFeed, getMomentsByEmotion, getFeedReactions, getProfile, getSavedMomentIds, saveMoment, unsaveMoment, reportMoment, adminDeleteMoment, adminBanUser, adminBlockUser, addReaction, getFollowingCategoryThumbnails, getGlobalCategoryThumbnails, getRandomMoments } from '../../lib/db'
 import { track, Events } from '../../lib/analytics'
 import { MomentWithProfile, Profile, ReactionType } from '../../lib/database.types'
 import { supabase } from '../../lib/supabase'
@@ -42,20 +42,14 @@ export default function FeedScreen() {
   // Флаг: лента уже загружена — не перезагружаем при возврате назад
   const feedLoaded = useRef(false)
 
-  // Загружаем превью (топ-1 фото) для каждой эмоции в стрипе — один раз при старте
-  const thumbnailsLoaded = useRef(false)
   async function loadEmotionThumbnails() {
-    if (thumbnailsLoaded.current) return
-    thumbnailsLoaded.current = true
-    const emotions = ['warm', 'nostalgic', 'calm', 'wow', 'relatable'] as ReactionType[]
-    const results = await Promise.all(
-      emotions.map(e => getMomentsByEmotion(e, 1))
-    )
+    const { data: { user } } = await supabase.auth.getUser()
+    const thumbnails = user
+      ? await getFollowingCategoryThumbnails(user.id)
+      : await getGlobalCategoryThumbnails()
     setCategories(prev => prev.map(cat => {
-      const idx = emotions.indexOf(cat.id as ReactionType)
-      if (idx === -1) return cat
-      const top = results[idx][0]
-      return top ? { ...cat, photoUrl: top.photo_url } : cat
+      const url = (thumbnails as Record<string, string | null>)[cat.id] ?? null
+      return url ? { ...cat, photoUrl: url } : cat
     }))
   }
 
@@ -86,8 +80,9 @@ export default function FeedScreen() {
       // Лента по эмоции — публичные посты, топ по кол-ву этой реакции
       data = await getMomentsByEmotion(catId as ReactionType, 30)
     } else {
-      // For you — персональная лента по подпискам
+      // For you — персональная лента по подпискам; fallback на случайные публичные фото
       data = user ? await getFeed(user.id, 30) : []
+      if (data.length === 0) data = await getRandomMoments(30)
     }
     setMoments(data)
 

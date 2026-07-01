@@ -4,6 +4,7 @@ import OtherProfileScreen from '../screens/OtherProfileScreen'
 import ShotsScrollFeed from '../screens/ShotsScrollFeed'
 import AlbumDetailScreen from '../screens/AlbumDetailScreen'
 import MomentDetailScreen from '../screens/MomentDetailScreen'
+import FollowListScreen from '../screens/FollowListScreen'
 
 const Stack = createNativeStackNavigator()
 
@@ -15,6 +16,7 @@ export default function CollectionStack() {
       <Stack.Screen name="ShotsScrollFeed" component={ShotsScrollFeed} />
       <Stack.Screen name="AlbumDetail" component={AlbumDetailScreen} />
       <Stack.Screen name="MomentDetail" component={MomentDetailScreen} />
+      <Stack.Screen name="FollowList" component={FollowListScreen} />
     </Stack.Navigator>
   )
 }

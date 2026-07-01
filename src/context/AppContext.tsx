@@ -5,6 +5,8 @@ interface AppContextType {
   isLoggedIn: boolean
   isAdmin: boolean
   exitGuestMode: () => void
+  unreadCount: number
+  setUnreadCount: (n: number) => void
 }
 
 export const AppContext = createContext<AppContextType>({
@@ -12,6 +14,8 @@ export const AppContext = createContext<AppContextType>({
   isLoggedIn: false,
   isAdmin: false,
   exitGuestMode: () => {},
+  unreadCount: 0,
+  setUnreadCount: () => {},
 })
 
 export const useAppContext = () => useContext(AppContext)

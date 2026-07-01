@@ -12,7 +12,7 @@ import { StatusBar } from 'expo-status-bar'
 import { Session } from '@supabase/supabase-js'
 import { useFonts, JetBrainsMono_800ExtraBold } from '@expo-google-fonts/jetbrains-mono'
 import { supabase } from './lib/supabase'
-import { isUserAdmin, isUserBlocked } from './lib/db'
+import { isUserAdmin, isUserBlocked, getUnreadNotificationsCount } from './lib/db'
 import { identify, reset, track, Events } from './lib/analytics'
 import { registerPushToken, unregisterPushToken } from './lib/pushNotifications'
 import TabNavigator from './src/navigation/TabNavigator'
@@ -26,6 +26,7 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [isGuest, setIsGuest] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [fontsLoaded] = useFonts({ JetBrainsMono_800ExtraBold })
 
@@ -74,6 +75,9 @@ export default function App() {
       const admin = await isUserAdmin(userId)
       setIsAdmin(admin)
 
+      const unread = await getUnreadNotificationsCount(userId)
+      setUnreadCount(unread)
+
       identify(userId, { is_admin: admin })
       track(Events.APP_OPENED)
 
@@ -89,7 +93,7 @@ export default function App() {
 
   return (
     <LanguageProvider>
-      <AppContext.Provider value={{ isGuest, isLoggedIn: !!session, isAdmin, exitGuestMode: () => setIsGuest(false) }}>
+      <AppContext.Provider value={{ isGuest, isLoggedIn: !!session, isAdmin, exitGuestMode: () => setIsGuest(false), unreadCount, setUnreadCount }}>
         <PlayerProvider>
           <NavigationContainer>
             <StatusBar style="light" />

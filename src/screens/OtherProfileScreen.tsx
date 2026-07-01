@@ -11,6 +11,7 @@ import {
   followUser, unfollowUser, isFollowing, getHighlights,
   adminBanUser, adminUnbanUser, adminBlockUser, adminUnblockUser,
   reportUser, getProfileWithModerationStatus, getFeedReactions,
+  getFollowersCount, getFollowingCount,
 } from '../../lib/db'
 import type { Profile, Moment, MomentWithProfile, AlbumWithMoments, HighlightWithMoment, ReactionType } from '../../lib/database.types'
 import { C } from '../theme'
@@ -70,6 +71,8 @@ export default function OtherProfileScreen() {
   const [activeTab, setActiveTab] = useState<'shots' | 'albums'>('shots')
   const [isBanned, setIsBanned] = useState(false)
   const [isBlocked, setIsBlocked] = useState(false)
+  const [followersCount, setFollowersCount] = useState(0)
+  const [followingCount, setFollowingCount] = useState(0)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reportSheetVisible, setReportSheetVisible] = useState(false)
   const { isAdmin } = useAppContext()
@@ -88,11 +91,13 @@ export default function OtherProfileScreen() {
       const { data: { user }, error: authErr } = await supabase.auth.getUser()
       if (authErr) console.warn('[OtherProfile] getUser error:', authErr.message)
 
-      const [prof, moms, albs, hl] = await Promise.all([
+      const [prof, moms, albs, hl, frsCount, fingCount] = await Promise.all([
         getProfileWithModerationStatus(userId),
         getUserMoments(userId),
         getUserAlbums(userId),
         getHighlights(userId),
+        getFollowersCount(userId),
+        getFollowingCount(userId),
       ])
 
       if (!prof) {
@@ -105,6 +110,8 @@ export default function OtherProfileScreen() {
       setProfile(prof)
       setIsBanned((prof as any).is_banned ?? false)
       setIsBlocked((prof as any).is_blocked ?? false)
+      setFollowersCount(frsCount)
+      setFollowingCount(fingCount)
 
       const publicMoments = moms.filter(m => m.is_public)
       console.log(`[OtherProfile] userId=${userId}: ${publicMoments.length} public moments, ${albs.length} albums, ${hl.length} highlights`)
@@ -281,17 +288,28 @@ export default function OtherProfileScreen() {
             ) : null}
           </View>
 
-          {/* Stats: кадры | альбомы */}
+          {/* Stats: кадры | подписчики | подписки */}
           <View style={styles.statsRow}>
             <View style={styles.stat}>
               <Text style={styles.statNum}>{fmt(moments.length)}</Text>
               <Text style={styles.statLabel}>кадры</Text>
             </View>
             <View style={styles.statDivider} />
-            <View style={styles.stat}>
-              <Text style={styles.statNum}>{fmt(albums.length)}</Text>
-              <Text style={styles.statLabel}>альбомы</Text>
-            </View>
+            <TouchableOpacity
+              style={styles.stat}
+              onPress={() => navigation.navigate('FollowList', { userId, kind: 'followers' })}
+            >
+              <Text style={styles.statNum}>{fmt(followersCount)}</Text>
+              <Text style={styles.statLabel}>подписчики</Text>
+            </TouchableOpacity>
+            <View style={styles.statDivider} />
+            <TouchableOpacity
+              style={styles.stat}
+              onPress={() => navigation.navigate('FollowList', { userId, kind: 'following' })}
+            >
+              <Text style={styles.statNum}>{fmt(followingCount)}</Text>
+              <Text style={styles.statLabel}>подписки</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Follow / Unfollow + Report */}

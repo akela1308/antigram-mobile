@@ -99,6 +99,11 @@ export interface SavedMoment {
   saved_at: string
 }
 
+export interface FollowProfile {
+  profile: Profile
+  followed_at: string
+}
+
 export interface NotificationItem {
   id: string
   user_id: string
@@ -109,6 +114,14 @@ export interface NotificationItem {
   read: boolean
   created_at: string
   // Joined relations
-  profiles: Profile | null       // actor (кто сделал действие)
-  moments: { photo_url: string } | null  // превью момента
+  profiles: Profile | null
+  moments: {
+    id: string
+    user_id: string
+    photo_url: string
+    caption: string | null
+    mood: string | null
+    is_public: boolean
+    created_at: string
+  } | null
 }
