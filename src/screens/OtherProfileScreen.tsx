@@ -16,6 +16,7 @@ import type { Profile, Moment, MomentWithProfile, AlbumWithMoments, HighlightWit
 import { C } from '../theme'
 import FilmStripProfileHeader from '../components/FilmStripProfileHeader'
 import { getTopReaction } from '../lib/reactions'
+import ActionSheet from '../components/ActionSheet'
 
 const W = Dimensions.get('window').width
 const GRID_PAD  = 8
@@ -69,6 +70,8 @@ export default function OtherProfileScreen() {
   const [activeTab, setActiveTab] = useState<'shots' | 'albums'>('shots')
   const [isBanned, setIsBanned] = useState(false)
   const [isBlocked, setIsBlocked] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reportSheetVisible, setReportSheetVisible] = useState(false)
   const { isAdmin } = useAppContext()
 
   // Флаг чтобы FilmStrip не сбрасывался при refocus
@@ -80,31 +83,47 @@ export default function OtherProfileScreen() {
 
   async function load() {
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const [prof, moms, albs, hl] = await Promise.all([
-      getProfileWithModerationStatus(userId),
-      getUserMoments(userId),
-      getUserAlbums(userId),
-      getHighlights(userId),
-    ])
-    setProfile(prof)
-    if (prof) {
+    setLoadError(null)
+    try {
+      const { data: { user }, error: authErr } = await supabase.auth.getUser()
+      if (authErr) console.warn('[OtherProfile] getUser error:', authErr.message)
+
+      const [prof, moms, albs, hl] = await Promise.all([
+        getProfileWithModerationStatus(userId),
+        getUserMoments(userId),
+        getUserAlbums(userId),
+        getHighlights(userId),
+      ])
+
+      if (!prof) {
+        console.warn('[OtherProfile] profile not found for userId:', userId)
+        setLoadError('Профиль не найден. Возможно, пользователь удалил аккаунт или у тебя нет доступа.')
+        setLoading(false)
+        return
+      }
+
+      setProfile(prof)
       setIsBanned((prof as any).is_banned ?? false)
       setIsBlocked((prof as any).is_blocked ?? false)
+
+      const publicMoments = moms.filter(m => m.is_public)
+      console.log(`[OtherProfile] userId=${userId}: ${publicMoments.length} public moments, ${albs.length} albums, ${hl.length} highlights`)
+      setMoments(publicMoments)
+      await loadReactions(publicMoments)
+      setAlbums(albs.filter(a => a.is_public))
+      setHighlights(hl)
+
+      if (user) {
+        const f = await isFollowing(user.id, userId)
+        setFollowed(f)
+      }
+    } catch (e) {
+      console.error('[OtherProfile] load error:', e)
+      setLoadError('Не удалось загрузить профиль. Проверь подключение.')
+    } finally {
+      setLoading(false)
+      stripMounted.current = true
     }
-    // Только публичные фото для чужого профиля
-    const publicMoments = moms.filter(m => m.is_public)
-    setMoments(publicMoments)
-    await loadReactions(publicMoments)
-    // Только публичные альбомы
-    setAlbums(albs.filter(a => a.is_public))
-    setHighlights(hl)
-    if (user) {
-      const f = await isFollowing(user.id, userId)
-      setFollowed(f)
-    }
-    setLoading(false)
-    stripMounted.current = true
   }
 
   async function loadReactions(items: Moment[]) {
@@ -136,14 +155,8 @@ export default function OtherProfileScreen() {
   }
 
   async function handleReportUser() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    Alert.alert('Пожаловаться на пользователя', undefined, [
-      { text: 'Спам', onPress: () => reportUser(user.id, userId, 'spam') },
-      { text: 'Оскорбительное поведение', onPress: () => reportUser(user.id, userId, 'abusive') },
-      { text: 'Другое', onPress: () => reportUser(user.id, userId, 'other') },
-      { text: 'Отмена', style: 'cancel' },
-    ])
+    // Alert.alert с 4 кнопками на Android молча обрезает "Отмена" → используем ActionSheet
+    setReportSheetVisible(true)
   }
 
   async function handleAdminToggleBan() {
@@ -191,6 +204,21 @@ export default function OtherProfileScreen() {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color={C.AMBER} />
+      </View>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <View style={styles.centered}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtnAbs}>
+          <Text style={styles.backText}>←</Text>
+        </TouchableOpacity>
+        <Text style={styles.errorEmoji}>🙁</Text>
+        <Text style={styles.errorText}>{loadError}</Text>
+        <TouchableOpacity onPress={load} style={styles.retryBtn}>
+          <Text style={styles.retryText}>Попробовать снова</Text>
+        </TouchableOpacity>
       </View>
     )
   }
@@ -400,6 +428,35 @@ export default function OtherProfileScreen() {
       } : undefined}
       ListFooterComponent={<View style={{ height: 32 }} />}
     />
+
+    <ActionSheet
+      visible={reportSheetVisible}
+      title="Пожаловаться на пользователя"
+      onClose={() => setReportSheetVisible(false)}
+      actions={[
+        {
+          label: 'Спам',
+          onPress: async () => {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) reportUser(user.id, userId, 'spam')
+          },
+        },
+        {
+          label: 'Оскорбительное поведение',
+          onPress: async () => {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) reportUser(user.id, userId, 'abusive')
+          },
+        },
+        {
+          label: 'Другое',
+          onPress: async () => {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) reportUser(user.id, userId, 'other')
+          },
+        },
+      ]}
+    />
   )
 }
 
@@ -570,4 +627,14 @@ const styles = StyleSheet.create({
   emptyWrap: { flex: 1, alignItems: 'center', marginTop: 40, gap: 8, paddingHorizontal: 16 },
   emptyEmoji: { fontSize: 40 },
   emptyText: { color: C.TEXT_MUTED, fontSize: 15 },
+
+  backBtnAbs: { position: 'absolute', top: 56, left: 16, padding: 8 },
+  errorEmoji: { fontSize: 40, marginBottom: 8 },
+  errorText: { color: C.TEXT_MUTED, fontSize: 14, textAlign: 'center', paddingHorizontal: 32, lineHeight: 20 },
+  retryBtn: {
+    marginTop: 16,
+    paddingHorizontal: 24, paddingVertical: 10,
+    borderRadius: 20, borderWidth: 1, borderColor: C.BORDER,
+  },
+  retryText: { color: C.BROWN_MID, fontWeight: '600', fontSize: 14 },
 })

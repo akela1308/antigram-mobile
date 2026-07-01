@@ -2,9 +2,12 @@ import { useState } from 'react'
 import { View, Text, Image, TouchableOpacity, Pressable, StyleSheet, Dimensions, Alert, Share } from 'react-native'
 import * as MediaLibrary from 'expo-media-library'
 import * as FileSystem from 'expo-file-system/legacy'
+import Constants from 'expo-constants'
 import { MomentWithProfile, ReactionType } from '../../lib/database.types'
 import { C } from '../theme'
 import { EMOTIONS, getCustomReaction, getTopReaction } from '../lib/reactions'
+import Avatar from './Avatar'
+import ActionSheet from './ActionSheet'
 
 const { width } = Dimensions.get('window')
 
@@ -36,9 +39,10 @@ export default function MomentCard({
 }: Props) {
   const profile = moment.profiles
   const displayName = profile?.display_name || profile?.username || 'antigram'
-  const avatarLetter = displayName[0].toUpperCase()
   const [captionExpanded, setCaptionExpanded] = useState(false)
   const [showReactionPicker, setShowReactionPicker] = useState(false)
+  const [menuSheetVisible, setMenuSheetVisible] = useState(false)
+  const [reportSheetVisible, setReportSheetVisible] = useState(false)
 
   const topReaction = getTopReaction(reactionCounts ?? {}, moment)
   const customReaction = getCustomReaction(moment)
@@ -46,23 +50,35 @@ export default function MomentCard({
 
   async function handleDownload() {
     try {
-      // Запрашиваем разрешение на доступ к галерее
       const { status } = await MediaLibrary.requestPermissionsAsync()
       if (status !== 'granted') {
         Alert.alert('Нет доступа', 'Разреши доступ к галерее в настройках телефона')
         return
       }
 
-      // Скачиваем фото во временный файл
       const filename = `antigram_${Date.now()}.jpg`
-      const localUri = FileSystem.cacheDirectory + filename
-      const { uri } = await FileSystem.downloadAsync(moment.photo_url, localUri)
+      const localUri = (FileSystem.cacheDirectory ?? '') + filename
+      const result = await FileSystem.downloadAsync(moment.photo_url, localUri)
 
-      // Сохраняем в галерею
-      await MediaLibrary.saveToLibraryAsync(uri)
+      if (result.status !== 200) {
+        throw new Error(`HTTP ${result.status} при скачивании`)
+      }
+
+      await MediaLibrary.saveToLibraryAsync(result.uri)
       Alert.alert('Сохранено', 'Фото сохранено в галерею 📷')
-    } catch {
-      Alert.alert('Ошибка', 'Не удалось сохранить фото')
+    } catch (e) {
+      console.error('[MomentCard] handleDownload failed:', e)
+
+      // Expo Go на Android ограничивает доступ к MediaLibrary начиная с Android 10+
+      const isExpoGo = Constants.executionEnvironment === 'storeClient'
+      if (isExpoGo) {
+        Alert.alert(
+          'Недоступно в Expo Go',
+          'Сохранение фото работает только в полноценной сборке приложения. Это ограничение Expo Go на Android.',
+        )
+      } else {
+        Alert.alert('Не удалось сохранить', 'Проверь подключение и попробуй снова')
+      }
     }
   }
 
@@ -104,67 +120,7 @@ export default function MomentCard({
   const authorName = profile?.display_name || profile?.username || 'пользователя'
 
   function handleMoreMenu() {
-    const adminOptions = isAdmin && !isOwnPost
-      ? [
-          {
-            text: '🗑 Удалить пост',
-            onPress: () => Alert.alert(
-              'Удалить пост?',
-              'Это действие необратимо.',
-              [
-                { text: 'Отмена', style: 'cancel' },
-                { text: 'Удалить', style: 'destructive', onPress: () => onAdminDelete?.(moment.id) },
-              ],
-            ),
-          },
-          {
-            text: '🚫 Теневой бан',
-            onPress: () => Alert.alert(
-              `Забанить @${authorName}?`,
-              'Контент пользователя будет скрыт от других. Сам пользователь ничего не заметит.',
-              [
-                { text: 'Отмена', style: 'cancel' },
-                { text: 'Забанить', style: 'destructive', onPress: () => onAdminBan?.(moment.user_id, authorName) },
-              ],
-            ),
-          },
-          {
-            text: '⛔ Заблокировать',
-            onPress: () => Alert.alert(
-              `Заблокировать @${authorName}?`,
-              'Пользователь не сможет войти в приложение.',
-              [
-                { text: 'Отмена', style: 'cancel' },
-                { text: 'Заблокировать', style: 'destructive', onPress: () => onAdminBlock?.(moment.user_id, authorName) },
-              ],
-            ),
-          },
-        ]
-      : []
-
-    Alert.alert(
-      'Действия',
-      undefined,
-      [
-        ...adminOptions,
-        ...(!isOwnPost ? [{
-          text: '⚑ Пожаловаться',
-          onPress: () => {
-            Alert.alert(
-              'Причина жалобы',
-              undefined,
-              [
-                { text: 'Спам', onPress: () => onReport?.(moment.id) },
-                { text: 'Оскорбительный контент', onPress: () => onReport?.(moment.id) },
-                { text: 'Другое', onPress: () => onReport?.(moment.id) },
-                { text: 'Отмена', style: 'cancel' },
-              ],
-            )
-          },
-        }] : []),
-        { text: 'Отмена', style: 'cancel' },
-      ],
-    )
+    setMenuSheetVisible(true)
   }
 
   return (
@@ -240,13 +196,7 @@ export default function MomentCard({
           disabled={!onAuthorPress}
           activeOpacity={onAuthorPress ? 0.7 : 1}
         >
-          {profile?.avatar_url ? (
-            <Image source={{ uri: profile.avatar_url }} style={styles.avatarImg} />
-          ) : (
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{avatarLetter}</Text>
-            </View>
-          )}
+          <Avatar uri={profile?.avatar_url} name={displayName} size={36} borderColor={C.BORDER} />
           <View style={styles.headerText}>
             <Text style={styles.username}>{displayName}</Text>
             <Text style={styles.time}>{formatTime(moment.created_at)}</Text>
@@ -313,6 +263,65 @@ export default function MomentCard({
       </View>
 
       <View style={styles.divider} />
+
+      {/* Главное меню «Действия» — заменяет Alert.alert с 5 кнопками */}
+      <ActionSheet
+        visible={menuSheetVisible}
+        title="Действия"
+        onClose={() => setMenuSheetVisible(false)}
+        actions={[
+          ...(isAdmin && !isOwnPost ? [
+            {
+              label: '🗑 Удалить пост',
+              destructive: true,
+              onPress: () => Alert.alert('Удалить пост?', 'Это действие необратимо.', [
+                { text: 'Отмена', style: 'cancel' },
+                { text: 'Удалить', style: 'destructive', onPress: () => onAdminDelete?.(moment.id) },
+              ]),
+            },
+            {
+              label: '🚫 Теневой бан',
+              destructive: true,
+              onPress: () => Alert.alert(
+                `Забанить @${authorName}?`,
+                'Контент пользователя будет скрыт от других. Сам пользователь ничего не заметит.',
+                [
+                  { text: 'Отмена', style: 'cancel' },
+                  { text: 'Забанить', style: 'destructive', onPress: () => onAdminBan?.(moment.user_id, authorName) },
+                ],
+              ),
+            },
+            {
+              label: '⛔ Заблокировать',
+              destructive: true,
+              onPress: () => Alert.alert(
+                `Заблокировать @${authorName}?`,
+                'Пользователь не сможет войти в приложение.',
+                [
+                  { text: 'Отмена', style: 'cancel' },
+                  { text: 'Заблокировать', style: 'destructive', onPress: () => onAdminBlock?.(moment.user_id, authorName) },
+                ],
+              ),
+            },
+          ] : []),
+          ...(!isOwnPost ? [{
+            label: '⚑ Пожаловаться',
+            onPress: () => setReportSheetVisible(true),
+          }] : []),
+        ]}
+      />
+
+      {/* Меню причины жалобы — тоже 4 варианта, которые не влезают в Alert */}
+      <ActionSheet
+        visible={reportSheetVisible}
+        title="Причина жалобы"
+        onClose={() => setReportSheetVisible(false)}
+        actions={[
+          { label: 'Спам', onPress: () => onReport?.(moment.id) },
+          { label: 'Оскорбительный контент', onPress: () => onReport?.(moment.id) },
+          { label: 'Другое', onPress: () => onReport?.(moment.id) },
+        ]}
+      />
     </View>
   )
 }
