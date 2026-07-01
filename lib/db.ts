@@ -754,8 +754,15 @@ export async function adminUnblockUser(userId: string): Promise<{ error: any }> 
 export async function getProfileWithModerationStatus(userId: string) {
   const { data } = await supabase
     .from('profiles')
-    .select('id, username, display_name, is_admin, is_blocked, is_banned')
+    .select('*')
     .eq('id', userId)
     .single()
-  return data as (Profile & { is_admin: boolean; is_blocked: boolean; is_banned: boolean }) | null
+  if (!data) return null
+  const d = data as any
+  return {
+    ...d,
+    is_admin:   d.is_admin   ?? false,
+    is_blocked: d.is_blocked ?? false,
+    is_banned:  d.is_banned  ?? false,
+  } as Profile & { is_admin: boolean; is_blocked: boolean; is_banned: boolean }
 }
