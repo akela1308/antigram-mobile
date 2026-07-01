@@ -233,6 +233,7 @@ export default function OtherProfileScreen() {
   })
 
   return (
+    <>
     <FlatList
       style={styles.root}
       data={activeTab === 'shots' ? buildGridRows(moments) : []}
@@ -457,6 +458,7 @@ export default function OtherProfileScreen() {
         },
       ]}
     />
+    </>
   )
 }
 
