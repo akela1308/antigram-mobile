@@ -2,14 +2,19 @@ import { useState } from 'react'
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   ScrollView, Alert, ActivityIndicator,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Linking,
 } from 'react-native'
 import { useNavigation, useRoute } from '@react-navigation/native'
+import Constants from 'expo-constants'
 import { updateProfile } from '../../lib/db'
 import { supabase } from '../../lib/supabase'
 import type { Profile } from '../../lib/database.types'
 import { C } from '../theme'
 import { useLang } from '../context/LanguageContext'
+
+const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0'
+// TODO: уточнить у команды адрес поддержки и ссылку на Telegram-бот
+const SUPPORT_EMAIL = 'support@antigram.app'
 
 export default function EditProfileScreen() {
   const navigation = useNavigation<any>()
@@ -185,7 +190,41 @@ export default function EditProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={{ height: 40 }} />
+        {/* Поддержка */}
+        <View style={styles.form}>
+          <Text style={styles.sectionTitle}>Поддержка</Text>
+
+          <TouchableOpacity
+            style={styles.listItem}
+            onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {
+              Alert.alert('Напиши нам', SUPPORT_EMAIL)
+            })}
+          >
+            <Text style={styles.listItemText}>Помощь</Text>
+            <Text style={styles.listItemArrow}>›</Text>
+          </TouchableOpacity>
+
+          <View style={styles.listDivider} />
+
+          <TouchableOpacity
+            style={styles.listItem}
+            onPress={() => (navigation as any).navigate('PrivacyPolicy')}
+          >
+            <Text style={styles.listItemText}>Политика конфиденциальности</Text>
+            <Text style={styles.listItemArrow}>›</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* О приложении */}
+        <View style={styles.form}>
+          <Text style={styles.sectionTitle}>О приложении</Text>
+          <View style={styles.aboutRow}>
+            <Text style={styles.aboutLabel}>ANTIGRAM</Text>
+            <Text style={styles.aboutValue}>v{APP_VERSION}</Text>
+          </View>
+        </View>
+
+        <View style={{ height: 48 }} />
       </ScrollView>
     </KeyboardAvoidingView>
   )
@@ -269,4 +308,19 @@ const styles = StyleSheet.create({
     borderRadius: 20, paddingVertical: 13, alignItems: 'center',
   },
   saveText: { color: C.WHITE, fontWeight: '700', fontSize: 14 },
+
+  listItem: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 14,
+  },
+  listItemText: { color: C.TEXT, fontSize: 15 },
+  listItemArrow: { color: C.TEXT_MUTED, fontSize: 18 },
+  listDivider: { height: StyleSheet.hairlineWidth, backgroundColor: C.DIVIDER },
+
+  aboutRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 14,
+  },
+  aboutLabel: { color: C.TEXT, fontSize: 15, fontWeight: '600' },
+  aboutValue: { color: C.TEXT_MUTED, fontSize: 14 },
 })
