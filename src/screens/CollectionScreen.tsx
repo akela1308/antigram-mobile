@@ -177,7 +177,7 @@ export default function CollectionScreen() {
     }
   }
 
-  async function handleTileReaction(moment: MomentWithProfile, type: ReactionType) {
+  async function handleTileReaction(moment: MomentWithProfile, type: ReactionType, displayedCount: number) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     const previous = userReactionMap[moment.id] ?? null
@@ -187,7 +187,7 @@ export default function CollectionScreen() {
     setReactionMap(prev => {
       const current = { ...(prev[moment.id] ?? {}) }
       if (previous) current[previous] = Math.max(0, (current[previous] ?? 0) - 1)
-      current[type] = (current[type] ?? 0) + 1
+      current[type] = Math.max(current[type] ?? 0, displayedCount) + 1
       return { ...prev, [moment.id]: current }
     })
 
@@ -320,7 +320,7 @@ interface TileProps {
   userReaction: ReactionType | null
   onPhotoTap: (m: MomentWithProfile) => void
   onAvatarTap: (m: MomentWithProfile) => void
-  onReact: (m: MomentWithProfile, type: ReactionType) => void
+  onReact: (m: MomentWithProfile, type: ReactionType, displayedCount: number) => void
 }
 
 function PhotoTile({ moment, index, reactionCounts, userReaction, onPhotoTap, onAvatarTap, onReact }: TileProps) {
@@ -348,7 +348,7 @@ function PhotoTile({ moment, index, reactionCounts, userReaction, onPhotoTap, on
           style={[styles.tileReaction, isReacted && styles.tileReactionActive]}
           onPress={(e) => {
             e.stopPropagation()
-            onReact(moment, topReaction.type)
+            onReact(moment, topReaction.type, topReaction.count)
           }}
           activeOpacity={0.82}
         >

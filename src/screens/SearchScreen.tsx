@@ -6,8 +6,12 @@ import {
 import { useNavigation } from '@react-navigation/native'
 import {
   searchUsers, getRandomMoments, getPhotoOfDay, getRandomUser, getUserMoments,
+  getFeedReactions, addReaction,
 } from '../../lib/db'
-import type { Profile, MomentWithProfile, Moment } from '../../lib/database.types'
+import type { Profile, MomentWithProfile, Moment, ReactionType } from '../../lib/database.types'
+import { supabase } from '../../lib/supabase'
+import { useAppContext } from '../context/AppContext'
+import { getTopReaction } from '../lib/reactions'
 import { C } from '../theme'
 
 const W = Dimensions.get('window').width
@@ -18,6 +22,7 @@ function getDisplayName(profile: Profile): string {
 }
 
 export default function SearchScreen() {
+  const { exitGuestMode, isGuest } = useAppContext()
   const navigation = useNavigation<any>()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Profile[]>([])
@@ -27,23 +32,46 @@ export default function SearchScreen() {
   const [randomUserMoments, setRandomUserMoments] = useState<Moment[]>([])
   const [forYou, setForYou] = useState<MomentWithProfile[]>([])
   const [photoOfDay, setPhotoOfDay] = useState<MomentWithProfile | null>(null)
+  const [reactionMap, setReactionMap] = useState<Record<string, Partial<Record<ReactionType, number>>>>({})
+  const [userReactionMap, setUserReactionMap] = useState<Record<string, ReactionType | null>>({})
   const [defaultLoading, setDefaultLoading] = useState(true)
 
   useEffect(() => { loadDefault() }, [])
 
   async function loadDefault() {
     setDefaultLoading(true)
-    const [user, forYouMoments, pod] = await Promise.all([
+    const [featuredUser, forYouMoments, pod] = await Promise.all([
       getRandomUser(), getRandomMoments(3), getPhotoOfDay(),
     ])
-    setRandomUser(user)
+    setRandomUser(featuredUser)
     setForYou(forYouMoments)
     setPhotoOfDay(pod)
-    if (user) {
-      const moms = await getUserMoments(user.id)
+    await loadReactions([...forYouMoments, ...(pod ? [pod] : [])])
+    if (featuredUser) {
+      const moms = await getUserMoments(featuredUser.id)
       setRandomUserMoments(moms.slice(0, 6))
     }
     setDefaultLoading(false)
+  }
+
+  async function loadReactions(moments: MomentWithProfile[]) {
+    if (moments.length === 0) {
+      setReactionMap({})
+      setUserReactionMap({})
+      return
+    }
+
+    const { data: { user } } = await supabase.auth.getUser()
+    const raw = await getFeedReactions(moments.map(m => m.id))
+    const map: Record<string, Partial<Record<ReactionType, number>>> = {}
+    const userMap: Record<string, ReactionType | null> = {}
+    for (const reaction of raw) {
+      if (!map[reaction.moment_id]) map[reaction.moment_id] = {}
+      map[reaction.moment_id][reaction.type] = (map[reaction.moment_id][reaction.type] ?? 0) + 1
+      if (user && reaction.user_id === user.id) userMap[reaction.moment_id] = reaction.type
+    }
+    setReactionMap(map)
+    setUserReactionMap(userMap)
   }
 
   async function handleSearch(text: string) {
@@ -57,6 +85,33 @@ export default function SearchScreen() {
 
   function openProfile(userId: string) {
     navigation.navigate('Profile', { screen: 'OtherProfile', params: { userId } })
+  }
+
+  async function handleTopReaction(moment: MomentWithProfile, type: ReactionType, displayedCount: number) {
+    if (isGuest) { exitGuestMode(); return }
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const previous = userReactionMap[moment.id] ?? null
+    if (previous === type) return
+
+    setUserReactionMap(prev => ({ ...prev, [moment.id]: type }))
+    setReactionMap(prev => {
+      const current = { ...(prev[moment.id] ?? {}) }
+      if (previous) current[previous] = Math.max(0, (current[previous] ?? 0) - 1)
+      current[type] = Math.max(current[type] ?? 0, displayedCount) + 1
+      return { ...prev, [moment.id]: current }
+    })
+
+    const { error } = await addReaction(moment.id, user.id, type)
+    if (error) {
+      setUserReactionMap(prev => ({ ...prev, [moment.id]: previous }))
+      setReactionMap(prev => {
+        const current = { ...(prev[moment.id] ?? {}) }
+        current[type] = Math.max(0, (current[type] ?? 0) - 1)
+        if (previous) current[previous] = (current[previous] ?? 0) + 1
+        return { ...prev, [moment.id]: current }
+      })
+    }
   }
 
   const isSearching = query.trim().length >= 2
@@ -166,16 +221,29 @@ export default function SearchScreen() {
                     horizontal showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.filmContent}
                   >
-                    {forYou.map(m => (
-                      <View key={m.id} style={styles.forYouCard}>
-                        <Image source={{ uri: m.photo_url }} style={styles.forYouImg} />
-                        {m.profiles?.username ? (
-                          <Text style={styles.forYouUser} numberOfLines={1}>
-                            @{m.profiles.username}
-                          </Text>
-                        ) : null}
-                      </View>
-                    ))}
+                    {forYou.map(m => {
+                      const topReaction = getTopReaction(reactionMap[m.id] ?? {}, m)
+                      const isReacted = topReaction ? userReactionMap[m.id] === topReaction.type : false
+                      return (
+                        <View key={m.id} style={styles.forYouCard}>
+                          <View style={styles.forYouImageWrap}>
+                            <Image source={{ uri: m.photo_url }} style={styles.forYouImg} />
+                            {topReaction && (
+                              <ReactionPill
+                                reaction={topReaction}
+                                active={isReacted}
+                                onPress={() => handleTopReaction(m, topReaction.type, topReaction.count)}
+                              />
+                            )}
+                          </View>
+                          {m.profiles?.username ? (
+                            <Text style={styles.forYouUser} numberOfLines={1}>
+                              @{m.profiles.username}
+                            </Text>
+                          ) : null}
+                        </View>
+                      )
+                    })}
                   </ScrollView>
                 </View>
               )}
@@ -188,6 +256,21 @@ export default function SearchScreen() {
                     onPress={() => openProfile(photoOfDay.user_id)}
                   >
                     <Image source={{ uri: photoOfDay.photo_url }} style={styles.podImg} />
+                    {(() => {
+                      const topReaction = getTopReaction(reactionMap[photoOfDay.id] ?? {}, photoOfDay)
+                      const isReacted = topReaction ? userReactionMap[photoOfDay.id] === topReaction.type : false
+                      return topReaction ? (
+                        <ReactionPill
+                          reaction={topReaction}
+                          active={isReacted}
+                          style={styles.podReaction}
+                          onPress={(event) => {
+                            event.stopPropagation()
+                            handleTopReaction(photoOfDay, topReaction.type, topReaction.count)
+                          }}
+                        />
+                      ) : null
+                    })()}
                     {photoOfDay.profiles?.username ? (
                       <View style={styles.podOverlay}>
                         <Text style={styles.podUser}>@{photoOfDay.profiles.username}</Text>
@@ -203,6 +286,34 @@ export default function SearchScreen() {
         </ScrollView>
       )}
     </View>
+  )
+}
+
+function ReactionPill({
+  reaction,
+  active,
+  onPress,
+  style,
+}: {
+  reaction: { type: ReactionType; emoji: string; label: string; count: number }
+  active: boolean
+  onPress: (event: any) => void
+  style?: any
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.reactionPill, active && styles.reactionPillActive, style]}
+      onPress={onPress}
+      activeOpacity={0.82}
+    >
+      <Text style={styles.reactionPillEmoji}>{reaction.emoji}</Text>
+      <Text style={[styles.reactionPillLabel, active && styles.reactionPillTextActive]} numberOfLines={1}>
+        {reaction.label}
+      </Text>
+      <Text style={[styles.reactionPillCount, active && styles.reactionPillTextActive]}>
+        {reaction.count}
+      </Text>
+    </TouchableOpacity>
   )
 }
 
@@ -291,14 +402,53 @@ const styles = StyleSheet.create({
   filmThumb: { width: THUMB, height: THUMB, borderRadius: 6, backgroundColor: C.BG_WARM },
 
   forYouCard: { width: (W - 48) / 2.4 },
-  forYouImg: {
+  forYouImageWrap: {
     width: (W - 48) / 2.4, height: (W - 48) / 2.4,
-    borderRadius: 8, backgroundColor: C.BG_WARM,
+    borderRadius: 8, overflow: 'hidden', backgroundColor: C.BG_WARM,
+  },
+  forYouImg: {
+    width: '100%', height: '100%',
   },
   forYouUser: { color: C.TEXT_MUTED, fontSize: 11, marginTop: 4, paddingLeft: 2 },
+  reactionPill: {
+    position: 'absolute',
+    left: 6,
+    bottom: 6,
+    maxWidth: (W - 48) / 2.4 - 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 14,
+    backgroundColor: 'rgba(20,14,10,0.74)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  reactionPillActive: {
+    backgroundColor: 'rgba(201,132,62,0.30)',
+    borderColor: C.AMBER,
+  },
+  reactionPillEmoji: { fontSize: 12 },
+  reactionPillLabel: {
+    color: C.WHITE,
+    fontSize: 10,
+    fontWeight: '700',
+    maxWidth: 76,
+  },
+  reactionPillCount: {
+    color: C.WHITE,
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  reactionPillTextActive: { color: C.AMBER_LIGHT },
 
   podCard: { marginHorizontal: 16, borderRadius: 12, overflow: 'hidden' },
   podImg: { width: W - 32, height: (W - 32) * 0.65 },
+  podReaction: {
+    bottom: 42,
+    maxWidth: W - 64,
+  },
   podOverlay: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: 'rgba(0,0,0,0.45)', padding: 10,
