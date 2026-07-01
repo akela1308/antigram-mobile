@@ -9,8 +9,9 @@ import { supabase } from '../../lib/supabase'
 import {
   getComments, addComment, deleteComment,
   getReactions, addReaction, removeReaction,
-  deleteMoment, getProfile,
+  deleteMoment, adminDeleteMoment, getProfile,
 } from '../../lib/db'
+import { useAppContext } from '../context/AppContext'
 import type { Moment, MomentWithProfile, Profile, CommentWithProfile, ReactionType } from '../../lib/database.types'
 import { C } from '../theme'
 import Avatar from '../components/Avatar'
@@ -42,6 +43,7 @@ export default function MomentDetailScreen() {
     moment: Moment | MomentWithProfile
     isOwner: boolean
   }
+  const { isAdmin } = useAppContext()
 
   const [moment, setMoment] = useState<Moment>(initialMoment)
   const [authorProfile, setAuthorProfile] = useState<Profile | null>(
@@ -141,24 +143,35 @@ export default function MomentDetailScreen() {
   }
 
   function openMenu() {
-    Alert.alert('', '', [
-      {
-        text: 'Редактировать описание',
-        onPress: () => { setCaptionDraft(moment.caption ?? ''); setEditingCaption(true) },
-      },
-      {
-        text: 'Удалить фото', style: 'destructive',
-        onPress: () =>
-          Alert.alert('Удалить фото?', 'Это действие нельзя отменить', [
-            { text: 'Отмена', style: 'cancel' },
-            {
-              text: 'Удалить', style: 'destructive',
-              onPress: async () => { await deleteMoment(moment.id); navigation.goBack() },
-            },
-          ]),
-      },
-      { text: 'Отмена', style: 'cancel' },
-    ])
+    if (isOwner) {
+      Alert.alert('', '', [
+        {
+          text: 'Редактировать описание',
+          onPress: () => { setCaptionDraft(moment.caption ?? ''); setEditingCaption(true) },
+        },
+        {
+          text: 'Удалить фото', style: 'destructive',
+          onPress: () =>
+            Alert.alert('Удалить фото?', 'Это действие нельзя отменить', [
+              { text: 'Отмена', style: 'cancel' },
+              {
+                text: 'Удалить', style: 'destructive',
+                onPress: async () => { await deleteMoment(moment.id); navigation.goBack() },
+              },
+            ]),
+        },
+        { text: 'Отмена', style: 'cancel' },
+      ])
+    } else {
+      // Admin-only: delete any photo
+      Alert.alert('Удалить фото?', 'Удаление нельзя отменить', [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить', style: 'destructive',
+          onPress: async () => { await adminDeleteMoment(moment.id); navigation.goBack() },
+        },
+      ])
+    }
   }
 
   async function handleSaveCaption() {
@@ -189,7 +202,7 @@ export default function MomentDetailScreen() {
           <Text style={styles.backIcon}>←</Text>
         </TouchableOpacity>
         <View style={{ flex: 1 }} />
-        {isOwner && (
+        {(isOwner || isAdmin) && (
           <TouchableOpacity
             onPress={openMenu}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}

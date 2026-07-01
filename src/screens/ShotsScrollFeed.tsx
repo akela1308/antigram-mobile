@@ -15,15 +15,19 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   View, FlatList, StyleSheet, Text, ActivityIndicator,
-  TouchableOpacity, Dimensions,
+  TouchableOpacity, Dimensions, Alert,
 } from 'react-native'
 import { useNavigation, useRoute } from '@react-navigation/native'
 import { supabase } from '../../lib/supabase'
-import { addReaction, getProfile, getUserMoments, getFeedReactions } from '../../lib/db'
+import {
+  addReaction, getProfile, getUserMoments, getFeedReactions,
+  adminDeleteMoment, adminBanUser, adminBlockUser,
+} from '../../lib/db'
 import type { Moment, MomentWithProfile, Profile, ReactionType } from '../../lib/database.types'
 import MomentCard from '../components/MomentCard'
 import Avatar from '../components/Avatar'
 import { C } from '../theme'
+import { useAppContext } from '../context/AppContext'
 
 const W = Dimensions.get('window').width
 
@@ -44,6 +48,7 @@ export default function ShotsScrollFeed() {
   const navigation = useNavigation<any>()
   const route = useRoute<any>()
   const { userId, title = 'Shots', startMomentId, isOwner = false } = route.params as RouteParams
+  const { isAdmin } = useAppContext()
 
   const [moments, setMoments] = useState<MomentWithProfile[]>([])
   const [reactionMap, setReactionMap] = useState<Record<string, Partial<Record<ReactionType, number>>>>({})
@@ -140,6 +145,33 @@ export default function ShotsScrollFeed() {
     }
   }
 
+  function handleAdminDelete(momentId: string) {
+    Alert.alert('Удалить фото?', 'Это действие нельзя отменить', [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Удалить', style: 'destructive',
+        onPress: async () => {
+          const { error } = await adminDeleteMoment(momentId)
+          if (!error) setMoments(prev => prev.filter(m => m.id !== momentId))
+        },
+      },
+    ])
+  }
+
+  function handleAdminBan(targetUserId: string, username: string) {
+    Alert.alert(`Забанить ${username}?`, 'Контент будет скрыт для всех', [
+      { text: 'Отмена', style: 'cancel' },
+      { text: 'Забанить', style: 'destructive', onPress: () => adminBanUser(targetUserId) },
+    ])
+  }
+
+  function handleAdminBlock(targetUserId: string, username: string) {
+    Alert.alert(`Заблокировать ${username}?`, 'Пользователь не сможет войти в приложение', [
+      { text: 'Отмена', style: 'cancel' },
+      { text: 'Заблокировать', style: 'destructive', onPress: () => adminBlockUser(targetUserId) },
+    ])
+  }
+
   // initialScrollIndex + getItemLayout обеспечивают скролл до нужного фото,
   // useEffect больше не нужен
 
@@ -199,10 +231,21 @@ export default function ShotsScrollFeed() {
             <MomentCard
               moment={item}
               currentUserId={currentUserId}
+              isAdmin={isAdmin}
               reactionCounts={reactionMap[item.id] ?? {}}
               userReaction={userReactionMap[item.id] ?? null}
               onReact={handleReact}
               onOpenDetail={() => navigation.navigate('MomentDetail', { moment: item, isOwner })}
+              onAuthorPress={() => {
+                if (isOwner) {
+                  navigation.navigate('Profile')
+                } else {
+                  navigation.navigate('OtherProfile', { userId })
+                }
+              }}
+              onAdminDelete={handleAdminDelete}
+              onAdminBan={handleAdminBan}
+              onAdminBlock={handleAdminBlock}
             />
           )}
           ListFooterComponent={<View style={{ height: 32 }} />}
