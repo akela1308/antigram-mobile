@@ -14,6 +14,7 @@ import { GLView } from 'expo-gl'
 import * as jpeg from 'jpeg-js'
 import { decode as decodeBase64, encode as encodeBase64 } from 'base64-arraybuffer'
 import type { FilmPreset, GrainConfig, AlgoType } from '../constants/filmPresets'
+import { createResizedJpeg, MOMENT_SOURCE } from './imageVariants'
 
 export type FlareType = 'none' | 'leak_warm' | 'leak_cool' | 'edge_burn' | 'streak'
 
@@ -390,7 +391,18 @@ export async function processPhoto(
   preset: FilmPreset,
   flareType: FlareType = 'none',
 ): Promise<string> {
-  const { data, width, height } = await readImagePixels(sourceUri)
+  // Кадр с камеры может быть 12 МП. Всё, что ниже, — попиксельная математика
+  // на JS, поэтому сначала приводим снимок к тому размеру, в котором он и
+  // будет жить (1080). Это разом и ускоряет обработку в разы, и убирает
+  // лишние мегабайты из того, что потом уедет в Storage.
+  let workingUri = sourceUri
+  try {
+    workingUri = await createResizedJpeg(sourceUri, MOMENT_SOURCE.maxSide, 0.95)
+  } catch {
+    // не получилось — обрабатываем оригинал, как раньше
+  }
+
+  const { data, width, height } = await readImagePixels(workingUri)
 
   // 1. Algorithmic preset (pixel math — before LUT)
   if (preset.algoType) {

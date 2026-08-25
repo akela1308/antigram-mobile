@@ -6,6 +6,7 @@ import Constants from 'expo-constants'
 import { MomentWithProfile, ReactionType } from '../../lib/database.types'
 import { C } from '../theme'
 import { EMOTIONS, getCustomReaction, getTopReaction } from '../lib/reactions'
+import { getMomentImageUrl } from '../lib/imageVariants'
 import Avatar from './Avatar'
 import ActionSheet from './ActionSheet'
 
@@ -58,7 +59,8 @@ export default function MomentCard({
 
       const filename = `antigram_${Date.now()}.jpg`
       const localUri = (FileSystem.cacheDirectory ?? '') + filename
-      const result = await FileSystem.downloadAsync(moment.photo_url, localUri)
+      // В галерею сохраняем архивный кадр, а не облегчённый вариант ленты.
+      const result = await FileSystem.downloadAsync(getMomentImageUrl(moment, 'original'), localUri)
 
       if (result.status !== 200) {
         throw new Error(`HTTP ${result.status} при скачивании`)
@@ -85,7 +87,7 @@ export default function MomentCard({
   function handleShare() {
     Share.share({
       message: moment.caption ?? 'Смотри фото в Antigram',
-      url: moment.photo_url,
+      url: getMomentImageUrl(moment, 'original'),
     }).catch(() => {})
   }
 
@@ -129,7 +131,8 @@ export default function MomentCard({
       {/* Фото — скруглённое, с отступами по бокам */}
       <Pressable onPress={onOpenDetail}>
         <View style={styles.photoWrap}>
-          <Image source={{ uri: moment.photo_url }} style={styles.photoImg} resizeMode="cover" />
+          {/* Лента — самый частый экран: облегчённый feed-вариант вместо оригинала. */}
+          <Image source={{ uri: getMomentImageUrl(moment, 'feed') }} style={styles.photoImg} resizeMode="cover" />
           {showReactionPicker && onReact && (
             <View style={styles.quickPicker}>
               {EMOTIONS.map(reaction => (

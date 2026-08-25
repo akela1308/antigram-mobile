@@ -18,6 +18,7 @@ import { C } from '../theme'
 import FilmStripProfileHeader from '../components/FilmStripProfileHeader'
 import { getTopReaction } from '../lib/reactions'
 import ActionSheet from '../components/ActionSheet'
+import { getMomentImageUrl } from '../lib/imageVariants'
 
 const W = Dimensions.get('window').width
 const GRID_PAD  = 8
@@ -236,7 +237,7 @@ export default function OtherProfileScreen() {
   // 5 слотов для кольцевой карусели (только для просмотра, isOwner=false)
   const ringPhotos: (string | null)[] = Array.from({ length: MAX_SLOTS }, (_, i) => {
     const hl = highlights.find(h => h.position === i)
-    return hl?.moments?.photo_url ?? null
+    return hl?.moments ? getMomentImageUrl(hl.moments, 'thumb') : null
   })
 
   return (
@@ -423,7 +424,7 @@ export default function OtherProfileScreen() {
         if (row.type === 'full') {
           return (
           <TouchableOpacity style={styles.fullTile} onPress={() => handleTapMoment(row.item)}>
-            <Image source={{ uri: row.item.photo_url }} style={styles.fullImg} resizeMode="cover" />
+            <Image source={{ uri: getMomentImageUrl(row.item, 'feed') }} style={styles.fullImg} resizeMode="cover" />
             <GridReactionBadge moment={row.item} profile={profile} reactionCounts={reactionMap[row.item.id] ?? {}} />
           </TouchableOpacity>
           )
@@ -431,12 +432,12 @@ export default function OtherProfileScreen() {
         return (
           <View style={styles.pairRow}>
             <TouchableOpacity style={styles.gridTile} onPress={() => handleTapMoment(row.left)}>
-              <Image source={{ uri: row.left.photo_url }} style={styles.gridImg} resizeMode="cover" />
+              <Image source={{ uri: getMomentImageUrl(row.left, 'thumb') }} style={styles.gridImg} resizeMode="cover" />
               <GridReactionBadge moment={row.left} profile={profile} reactionCounts={reactionMap[row.left.id] ?? {}} />
             </TouchableOpacity>
             {row.right ? (
               <TouchableOpacity style={styles.gridTile} onPress={() => handleTapMoment(row.right!)}>
-                <Image source={{ uri: row.right.photo_url }} style={styles.gridImg} resizeMode="cover" />
+                <Image source={{ uri: getMomentImageUrl(row.right, 'thumb') }} style={styles.gridImg} resizeMode="cover" />
                 <GridReactionBadge moment={row.right} profile={profile} reactionCounts={reactionMap[row.right.id] ?? {}} />
               </TouchableOpacity>
             ) : (

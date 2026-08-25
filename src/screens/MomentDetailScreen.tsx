@@ -15,6 +15,7 @@ import { useAppContext } from '../context/AppContext'
 import type { Moment, MomentWithProfile, Profile, CommentWithProfile, ReactionType } from '../../lib/database.types'
 import { C } from '../theme'
 import Avatar from '../components/Avatar'
+import { getMomentImageUrl } from '../lib/imageVariants'
 
 const W = Dimensions.get('window').width
 
@@ -237,7 +238,7 @@ export default function MomentDetailScreen() {
         </TouchableOpacity>
 
         {/* Фото 3:4 */}
-        <Image source={{ uri: moment.photo_url }} style={styles.photo} resizeMode="cover" />
+        <Image source={{ uri: getMomentImageUrl(moment, 'full') }} style={styles.photo} resizeMode="cover" />
 
         {/* Подпись */}
         {editingCaption ? (

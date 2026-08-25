@@ -12,6 +12,7 @@ import {
 } from '../../lib/db'
 import type { Moment } from '../../lib/database.types'
 import { C } from '../theme'
+import { getMomentImageUrl } from '../lib/imageVariants'
 
 const W = Dimensions.get('window').width
 const COLS = 3
@@ -138,7 +139,7 @@ export default function AlbumDetailScreen() {
             }
             renderItem={({ item }) => (
               <TouchableOpacity onPress={() => handleTapMoment(item)}>
-                <Image source={{ uri: item.photo_url }} style={styles.tile} />
+                <Image source={{ uri: getMomentImageUrl(item, 'thumb') }} style={styles.tile} />
               </TouchableOpacity>
             )}
           />
@@ -175,7 +176,7 @@ export default function AlbumDetailScreen() {
                 contentContainerStyle={{ gap: 2, paddingBottom: 32 }}
                 renderItem={({ item }) => (
                   <TouchableOpacity onPress={() => handleAddMoment(item)}>
-                    <Image source={{ uri: item.photo_url }} style={styles.pickerTile} />
+                    <Image source={{ uri: getMomentImageUrl(item, 'thumb') }} style={styles.pickerTile} />
                   </TouchableOpacity>
                 )}
               />

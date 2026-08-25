@@ -1,8 +1,16 @@
 import { supabase } from './supabase'
-import type { Profile, Moment, MomentWithProfile, ReactionType, ReactionWithDetails, HighlightWithMoment, Album, AlbumWithMoments, CommentWithProfile, SavedMoment, NotificationItem, FollowProfile } from './database.types'
+import type { Profile, Moment, MomentWithProfile, ReactionType, ReactionWithDetails, HighlightWithMoment, Album, AlbumWithMoments, CommentWithProfile, SavedMoment, NotificationItem, FollowProfile, ImageVariants } from './database.types'
 import * as FileSystem from 'expo-file-system/legacy'
 import { decode } from 'base64-arraybuffer'
 import { track, Events } from './analytics'
+import {
+  MOMENT_SOURCE,
+  MOMENT_IMAGE_VARIANTS,
+  MOMENT_IMAGE_CACHE_CONTROL,
+  createResizedJpeg,
+  getImageSize,
+  getMomentImageUrl,
+} from '../src/lib/imageVariants'
 
 // ─────────────────────────────────────────────
 // PROFILES
@@ -98,6 +106,7 @@ export async function getUserMoments(userId: string): Promise<Moment[]> {
 export async function createMoment(params: {
   userId: string
   photoUrl: string
+  imageVariants?: ImageVariants
   caption?: string
   mood?: string
   customMoodEmoji?: string
@@ -115,11 +124,26 @@ export async function createMoment(params: {
   // (если миграция ещё не запускалась — просто игнорируем)
   if (params.customMoodEmoji) payload.custom_mood_emoji = params.customMoodEmoji
   if (params.customMoodLabel) payload.custom_mood_label = params.customMoodLabel
-  const { data, error } = await supabase
+
+  const hasVariants = params.imageVariants && Object.keys(params.imageVariants).length > 0
+  if (hasVariants) payload.image_variants = params.imageVariants
+
+  let { data, error } = await supabase
     .from('moments')
     .insert(payload)
     .select()
     .single()
+
+  // Если колонка image_variants ещё не накатана на этой базе — повторяем без неё,
+  // чтобы публикация не ломалась (тот же приём, что и с custom_mood выше).
+  if (error && hasVariants) {
+    const { image_variants: _dropped, ...withoutVariants } = payload
+    ;({ data, error } = await supabase
+      .from('moments')
+      .insert(withoutVariants)
+      .select()
+      .single())
+  }
 
   if (!error && data) {
     track(Events.PHOTO_POSTED, { mood: params.mood ?? null })
@@ -204,7 +228,7 @@ export async function searchUsers(query: string): Promise<Profile[]> {
 export async function getMyNotifications(userId: string): Promise<NotificationItem[]> {
   const { data } = await supabase
     .from('notifications')
-    .select('*, profiles!actor_id(*), moments(id, user_id, photo_url, caption, mood, is_public, created_at)')
+    .select('*, profiles!actor_id(*), moments(id, user_id, photo_url, image_variants, caption, mood, is_public, created_at)')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(50)
@@ -276,17 +300,18 @@ function pickRandom<T>(arr: T[]): T | null {
 export async function getGlobalCategoryThumbnails(): Promise<CategoryThumbnailMap> {
   const emotions: ReactionType[] = ['warm', 'nostalgic', 'calm', 'wow', 'relatable']
   const [forYouRes, ...emotionLists] = await Promise.all([
-    supabase.from('moments').select('photo_url').eq('is_public', true)
+    supabase.from('moments').select('photo_url, image_variants').eq('is_public', true)
       .order('created_at', { ascending: false }).limit(40),
     ...emotions.map(e => getMomentsByEmotion(e, 5)),
   ])
-  const forYouUrls = (forYouRes.data as { photo_url: string }[] ?? []).map(m => m.photo_url)
+  // Это обложки категорий размером с иконку — им хватает thumb.
+  const forYouUrls = (forYouRes.data as Moment[] ?? []).map(m => getMomentImageUrl(m, 'thumb'))
   const result: CategoryThumbnailMap = {
     for_you: pickRandom(forYouUrls),
     warm: null, nostalgic: null, calm: null, wow: null, relatable: null,
   }
   emotions.forEach((e, i) => {
-    const urls = (emotionLists[i] as MomentWithProfile[]).map(m => m.photo_url)
+    const urls = (emotionLists[i] as MomentWithProfile[]).map(m => getMomentImageUrl(m, 'thumb'))
     ;(result as Record<string, string | null>)[e] = pickRandom(urls)
   })
   return result
@@ -298,9 +323,9 @@ export async function getFollowingCategoryThumbnails(userId: string): Promise<Ca
   const followingIds = (following as { following_id: string }[] ?? []).map(f => f.following_id)
 
   const forYouQuery = followingIds.length > 0
-    ? supabase.from('moments').select('photo_url').eq('is_public', true)
+    ? supabase.from('moments').select('photo_url, image_variants').eq('is_public', true)
         .in('user_id', followingIds).order('created_at', { ascending: false }).limit(20)
-    : supabase.from('moments').select('photo_url').eq('is_public', true)
+    : supabase.from('moments').select('photo_url, image_variants').eq('is_public', true)
         .order('created_at', { ascending: false }).limit(20)
 
   const emotions: ReactionType[] = ['warm', 'nostalgic', 'calm', 'wow', 'relatable']
@@ -308,13 +333,13 @@ export async function getFollowingCategoryThumbnails(userId: string): Promise<Ca
     forYouQuery,
     ...emotions.map(e => getMomentsByEmotion(e, 5)),
   ])
-  const forYouUrls = (forYouRes.data as { photo_url: string }[] ?? []).map(m => m.photo_url)
+  const forYouUrls = (forYouRes.data as Moment[] ?? []).map(m => getMomentImageUrl(m, 'thumb'))
   const result: CategoryThumbnailMap = {
     for_you: pickRandom(forYouUrls),
     warm: null, nostalgic: null, calm: null, wow: null, relatable: null,
   }
   emotions.forEach((e, i) => {
-    const urls = (emotionLists[i] as MomentWithProfile[]).map(m => m.photo_url)
+    const urls = (emotionLists[i] as MomentWithProfile[]).map(m => getMomentImageUrl(m, 'thumb'))
     ;(result as Record<string, string | null>)[e] = pickRandom(urls)
   })
   return result
@@ -404,9 +429,20 @@ export async function getRandomUser(): Promise<Profile | null> {
 
 export async function uploadAvatarPhoto(userId: string, uri: string): Promise<string | null> {
   const filename = `${userId}/avatar.jpg`
+
+  // Аватар нигде не показывается крупнее ~120dp, поэтому 400px с запасом
+  // хватает даже на 3x-экранах. Раньше сюда улетал кадр из галереи как есть —
+  // это могли быть мегабайты, которые потом раздавались в каждой ленте.
+  let sourceUri = uri
+  try {
+    sourceUri = await createResizedJpeg(uri, 400, 0.8)
+  } catch {
+    // если пережать не вышло — грузим оригинал, это не повод ронять сохранение
+  }
+
   let base64: string
   try {
-    base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' })
+    base64 = await FileSystem.readAsStringAsync(sourceUri, { encoding: 'base64' })
   } catch (e) {
     return null
   }
@@ -418,7 +454,9 @@ export async function uploadAvatarPhoto(userId: string, uri: string): Promise<st
     return null
   }
   const { data } = supabase.storage.from('avatars').getPublicUrl(filename)
-  return data.publicUrl
+  // Путь у аватара постоянный и перезаписывается, поэтому долгий кэш здесь
+  // нельзя — вместо этого ломаем кэш версией в query-параметре.
+  return `${data.publicUrl}?v=${Date.now()}`
 }
 
 // ─────────────────────────────────────────────
@@ -428,35 +466,95 @@ export async function uploadAvatarPhoto(userId: string, uri: string): Promise<st
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!
 
-export async function uploadMomentPhoto(userId: string, uri: string): Promise<string | null> {
-  const filename = `${userId}/${Date.now()}.jpg`
+export type MomentUploadResult = {
+  photoUrl: string
+  variants: ImageVariants
+}
+
+/**
+ * Загружает кадр в трёх весах: original (архив), feed (лента), thumb (сетки).
+ * Раньше сюда уходил один файл в полном разрешении при quality 92, и он же
+ * потом раздавался на каждом экране — это была основная статья расхода egress.
+ *
+ * Схема путей совпадает с telegram-webapp: userId/timestamp/variant.jpg.
+ */
+export async function uploadMomentPhoto(userId: string, uri: string): Promise<MomentUploadResult | null> {
+  const stamp = Date.now()
+  const originalPath = `${userId}/${stamp}/original.jpg`
 
   // 1. Verify auth
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
-  // 2. Read file
-  let base64: string
+  // 2. Приводим исходник к архивному размеру (1080 / q0.85).
+  //    Кадр с камеры может быть 12 МП — хранить и раздавать его незачем.
+  const sourceSize = await getImageSize(uri)
+  let sourceUri = uri
   try {
-    base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' })
-  } catch (e) {
-    return null
+    sourceUri = await createResizedJpeg(uri, MOMENT_SOURCE.maxSide, MOMENT_SOURCE.compress, sourceSize)
+  } catch {
+    // не удалось пережать — грузим как есть, лучше тяжёлый момент, чем потерянный
   }
 
-  const arrayBuffer = decode(base64)
+  const originalBuffer = await readFileAsArrayBuffer(sourceUri)
+  if (!originalBuffer) return null
 
   // 3. Primary: supabase-js SDK upload
+  let originalUrl: string | null = null
   const { error: uploadError } = await supabase.storage
     .from('moments')
-    .upload(filename, arrayBuffer, { contentType: 'image/jpeg' })
+    .upload(originalPath, originalBuffer, {
+      contentType: 'image/jpeg',
+      cacheControl: MOMENT_IMAGE_CACHE_CONTROL,
+    })
 
   if (!uploadError) {
-    const { data } = supabase.storage.from('moments').getPublicUrl(filename)
-    return data.publicUrl
+    const { data } = supabase.storage.from('moments').getPublicUrl(originalPath)
+    originalUrl = data.publicUrl
+  } else {
+    // 4. Fallback: direct REST API via fetch()
+    originalUrl = await uploadViaRest(originalPath, originalBuffer)
   }
 
-  // 4. Fallback: direct REST API via fetch()
-  return uploadViaRest(filename, arrayBuffer)
+  if (!originalUrl) return null
+
+  const variants: ImageVariants = { original: originalUrl, full: originalUrl }
+
+  // 5. Лёгкие варианты. Если какой-то не собрался — не роняем публикацию:
+  //    getMomentImageUrl умеет откатываться на original.
+  await Promise.all((['feed', 'thumb'] as const).map(async variant => {
+    try {
+      const config = MOMENT_IMAGE_VARIANTS[variant]
+      const variantUri = await createResizedJpeg(sourceUri, config.maxSide, config.compress)
+      const buffer = await readFileAsArrayBuffer(variantUri)
+      if (!buffer) return
+
+      const path = `${userId}/${stamp}/${variant}.jpg`
+      const { error } = await supabase.storage
+        .from('moments')
+        .upload(path, buffer, {
+          contentType: 'image/jpeg',
+          cacheControl: MOMENT_IMAGE_CACHE_CONTROL,
+        })
+      if (error) return
+
+      const { data } = supabase.storage.from('moments').getPublicUrl(path)
+      variants[variant] = data.publicUrl
+    } catch {
+      // вариант необязателен — молча пропускаем
+    }
+  }))
+
+  return { photoUrl: originalUrl, variants }
+}
+
+async function readFileAsArrayBuffer(uri: string): Promise<ArrayBuffer | null> {
+  try {
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' })
+    return decode(base64)
+  } catch {
+    return null
+  }
 }
 
 async function uploadViaRest(filename: string, body: ArrayBuffer): Promise<string | null> {
@@ -472,6 +570,7 @@ async function uploadViaRest(filename: string, body: ArrayBuffer): Promise<strin
         'Authorization': `Bearer ${session.access_token}`,
         'apikey': SUPABASE_ANON_KEY,
         'Content-Type': 'image/jpeg',
+        'Cache-Control': MOMENT_IMAGE_CACHE_CONTROL,
         'x-upsert': 'true',
       },
       body: new Uint8Array(body),
@@ -558,13 +657,13 @@ export async function getUserAlbums(userId: string): Promise<AlbumWithMoments[]>
     (albums as Album[]).map(async (album) => {
       const { data: am } = await supabase
         .from('album_moments')
-        .select('moment_id, moments(photo_url)')
+        .select('moment_id, moments(photo_url, image_variants)')
         .eq('album_id', album.id)
         .order('added_at', { ascending: true })
         .limit(1)
-      const firstUrl = am && am.length > 0
-        ? (am[0] as any).moments?.photo_url ?? null
-        : null
+      // Обложка альбома — маленькая плитка, берём thumb.
+      const firstMoment = am && am.length > 0 ? (am[0] as any).moments : null
+      const firstUrl = firstMoment ? getMomentImageUrl(firstMoment, 'thumb') : null
       const { count } = await supabase
         .from('album_moments')
         .select('*', { count: 'exact', head: true })

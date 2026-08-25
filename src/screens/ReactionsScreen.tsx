@@ -9,6 +9,7 @@ import { getMyNotifications, markNotificationsRead } from '../../lib/db'
 import type { NotificationItem, Moment } from '../../lib/database.types'
 import { C } from '../theme'
 import { useAppContext } from '../context/AppContext'
+import { getMomentImageUrl } from '../lib/imageVariants'
 
 const REACTION_EMOJI: Record<string, string> = {
   warm: '🔥', nostalgic: '🌅', calm: '🌿', wow: '✨', relatable: '🤍',
@@ -72,6 +73,7 @@ export default function ReactionsScreen() {
         id: m.id,
         user_id: m.user_id,
         photo_url: m.photo_url,
+        image_variants: m.image_variants,
         caption: m.caption,
         mood: m.mood,
         custom_mood_emoji: null,
@@ -144,7 +146,7 @@ export default function ReactionsScreen() {
 
               {/* Превью момента (для reaction/comment) */}
               {item.moments?.photo_url ? (
-                <Image source={{ uri: item.moments.photo_url }} style={styles.thumb} />
+                <Image source={{ uri: getMomentImageUrl(item.moments, 'thumb') }} style={styles.thumb} />
               ) : null}
 
               {/* Оранжевая точка для новых */}

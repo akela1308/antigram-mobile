@@ -17,6 +17,7 @@ import { getSavedMoments, getFeedReactions } from '../../lib/db'
 import type { MomentWithProfile, ReactionType } from '../../lib/database.types'
 import { C } from '../theme'
 import { getTopReaction } from '../lib/reactions'
+import { getMomentImageUrl } from '../lib/imageVariants'
 
 const W = Dimensions.get('window').width
 const GRID_PAD    = 8
@@ -133,7 +134,7 @@ export default function SavedScreen() {
                   onPress={() => handleTapMoment(row.item)}
                 >
                   <Image
-                    source={{ uri: row.item.photo_url }}
+                    source={{ uri: getMomentImageUrl(row.item, 'feed') }}
                     style={styles.fullImg}
                     resizeMode="cover"
                   />
@@ -149,7 +150,7 @@ export default function SavedScreen() {
                   onPress={() => handleTapMoment(row.left)}
                 >
                   <Image
-                    source={{ uri: row.left.photo_url }}
+                    source={{ uri: getMomentImageUrl(row.left, 'thumb') }}
                     style={styles.gridImg}
                     resizeMode="cover"
                   />
@@ -162,7 +163,7 @@ export default function SavedScreen() {
                     onPress={() => handleTapMoment(row.right!)}
                   >
                     <Image
-                      source={{ uri: row.right.photo_url }}
+                      source={{ uri: getMomentImageUrl(row.right, 'thumb') }}
                       style={styles.gridImg}
                       resizeMode="cover"
                     />

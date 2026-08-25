@@ -10,10 +10,15 @@ export interface Profile {
   created_at: string
 }
 
+// Варианты одного кадра в Storage. Колонка общая с telegram-webapp.
+export type ImageVariantName = 'original' | 'full' | 'feed' | 'thumb'
+export type ImageVariants = Partial<Record<ImageVariantName, string>>
+
 export interface Moment {
   id: string
   user_id: string
   photo_url: string
+  image_variants: ImageVariants | null
   caption: string | null
   mood: string | null
   custom_mood_emoji: string | null
@@ -119,6 +124,7 @@ export interface NotificationItem {
     id: string
     user_id: string
     photo_url: string
+    image_variants: ImageVariants | null
     caption: string | null
     mood: string | null
     is_public: boolean

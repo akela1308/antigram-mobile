@@ -32,6 +32,7 @@ import type { MomentWithProfile, Profile, ReactionType } from '../../lib/databas
 import { C } from '../theme'
 import { getTopReaction } from '../lib/reactions'
 import Avatar from '../components/Avatar'
+import { getMomentImageUrl } from '../lib/imageVariants'
 
 const W = Dimensions.get('window').width
 const GRID_PAD  = 10
@@ -331,7 +332,7 @@ function PhotoTile({ moment, index, reactionCounts, userReaction, onPhotoTap, on
       activeOpacity={0.9}
     >
       <Image
-        source={{ uri: moment.photo_url }}
+        source={{ uri: getMomentImageUrl(moment, 'thumb') }}
         style={styles.tileImg}
         resizeMode="cover"
       />

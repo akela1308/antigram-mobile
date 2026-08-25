@@ -142,15 +142,16 @@ export default function CameraScreen() {
     setPublishing(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setPublishing(false); return }
-    const photoUrl = await uploadMomentPhoto(user.id, photoUri)
-    if (!photoUrl) {
+    const upload = await uploadMomentPhoto(user.id, photoUri)
+    if (!upload) {
       Alert.alert(t.error, t.publishError)
       setPublishing(false)
       return
     }
     const { data: createdMoment, error } = await createMoment({
       userId: user.id,
-      photoUrl,
+      photoUrl: upload.photoUrl,
+      imageVariants: upload.variants,
       caption: caption.trim() || undefined,
       mood: mood ?? undefined,
       customMoodEmoji: customMoodEmoji || undefined,

@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase'
 import { useAppContext } from '../context/AppContext'
 import { getTopReaction } from '../lib/reactions'
 import { C } from '../theme'
+import { getMomentImageUrl } from '../lib/imageVariants'
 
 const W = Dimensions.get('window').width
 const THUMB = 70
@@ -207,7 +208,7 @@ export default function SearchScreen() {
                       contentContainerStyle={styles.filmContent}
                     >
                       {randomUserMoments.map(m => (
-                        <Image key={m.id} source={{ uri: m.photo_url }} style={styles.filmThumb} />
+                        <Image key={m.id} source={{ uri: getMomentImageUrl(m, 'thumb') }} style={styles.filmThumb} />
                       ))}
                     </ScrollView>
                   )}
@@ -227,7 +228,7 @@ export default function SearchScreen() {
                       return (
                         <View key={m.id} style={styles.forYouCard}>
                           <View style={styles.forYouImageWrap}>
-                            <Image source={{ uri: m.photo_url }} style={styles.forYouImg} />
+                            <Image source={{ uri: getMomentImageUrl(m, 'thumb') }} style={styles.forYouImg} />
                             {topReaction && (
                               <ReactionPill
                                 reaction={topReaction}
@@ -255,7 +256,7 @@ export default function SearchScreen() {
                     style={styles.podCard}
                     onPress={() => openProfile(photoOfDay.user_id)}
                   >
-                    <Image source={{ uri: photoOfDay.photo_url }} style={styles.podImg} />
+                    <Image source={{ uri: getMomentImageUrl(photoOfDay, 'feed') }} style={styles.podImg} />
                     {(() => {
                       const topReaction = getTopReaction(reactionMap[photoOfDay.id] ?? {}, photoOfDay)
                       const isReacted = topReaction ? userReactionMap[photoOfDay.id] === topReaction.type : false
@@ -347,7 +348,7 @@ function SearchUserRow({ profile, onPress }: { profile: Profile; onPress: () => 
           contentContainerStyle={{ gap: 4 }}
         >
           {moments.map(m => (
-            <Image key={m.id} source={{ uri: m.photo_url }} style={styles.userThumb} />
+            <Image key={m.id} source={{ uri: getMomentImageUrl(m, 'thumb') }} style={styles.userThumb} />
           ))}
         </ScrollView>
       )}
