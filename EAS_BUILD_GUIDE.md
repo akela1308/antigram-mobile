@@ -34,7 +34,7 @@ eas login
 В папке `ANTIGRAM/mobile`:
 
 ```bash
-cd ~/Desktop/ANTIGRAM/mobile
+cd ~/Desktop/Projects/ANTIGRAM/mobile
 eas init --id YOUR_PROJECT_ID
 ```
 
